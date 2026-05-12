@@ -63,7 +63,7 @@ async def extract_resume_text(
         raise HTTPException(status_code=422, detail="Could not extract text from file") from exc
 
     supabase.table("resume_uploads").update(
-        {"status": "processed", "extracted_text": text, "updated_at": "now()"}
+        {"status": "processed", "extracted_text": text}
     ).eq("id", upload_id).execute()
 
     return ExtractResponse(id=upload_id, status="processed", char_count=len(text))
