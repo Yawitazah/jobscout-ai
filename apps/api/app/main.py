@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import health, profiles, resumes
+from app.routers import admin, health, profiles, resumes
 
 settings = get_settings()
 
@@ -24,6 +24,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(resumes.router)
 app.include_router(profiles.router)
+app.include_router(admin.router)
 
 
 @app.on_event("startup")

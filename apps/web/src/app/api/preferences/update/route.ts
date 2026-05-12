@@ -10,6 +10,7 @@ const ALLOWED = [
   "industries",
   "deal_breakers",
   "auto_approve_rules",
+  "auto_reject_rules",
 ];
 
 export async function POST(req: NextRequest) {

@@ -1,0 +1,12 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir uv
+
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+COPY app ./app
+
+CMD ["uv", "run", "celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info", "--concurrency=4"]

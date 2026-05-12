@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { CheckCircle } from "lucide-react";
+import { AutoRules, AutoRule } from "./AutoRules";
 
 interface Prefs {
   target_titles: string[];
@@ -13,6 +14,8 @@ interface Prefs {
   target_locations: string[];
   industries: string[];
   deal_breakers: string[];
+  auto_approve_rules?: AutoRule[];
+  auto_reject_rules?: AutoRule[];
 }
 
 interface Props {
@@ -20,11 +23,15 @@ interface Props {
 }
 
 const WORK_MODES = ["Remote", "Hybrid", "On-site"];
-const STEPS = ["Roles", "Work style", "Compensation", "Location", "Industries", "Deal-breakers"];
+const STEPS = ["Roles", "Work style", "Compensation", "Location", "Industries", "Deal-breakers", "Automation"];
 
 export function PreferencesWizard({ initial }: Props) {
   const [step, setStep] = useState(0);
-  const [prefs, setPrefs] = useState<Prefs>(initial);
+  const [prefs, setPrefs] = useState<Prefs>({
+    ...initial,
+    auto_approve_rules: initial.auto_approve_rules ?? [],
+    auto_reject_rules: initial.auto_reject_rules ?? [],
+  });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -193,6 +200,20 @@ export function PreferencesWizard({ initial }: Props) {
             "No equity, Requires relocation, No remote",
             "Deal-breakers (we will filter these out)"
           )}
+
+        {step === 6 && (
+          <AutoRules
+            approveRules={prefs.auto_approve_rules ?? []}
+            rejectRules={prefs.auto_reject_rules ?? []}
+            onChange={(approve, reject) =>
+              setPrefs((p) => ({
+                ...p,
+                auto_approve_rules: approve,
+                auto_reject_rules: reject,
+              }))
+            }
+          />
+        )}
       </div>
 
       <div className="flex items-center justify-between">
