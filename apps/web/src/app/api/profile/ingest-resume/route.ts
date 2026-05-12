@@ -43,9 +43,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Get a fresh session token for server-to-server call
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData?.session?.access_token;
+    // The client passes its JWT in X-User-Token for server-to-server FastAPI call
+    const token = req.headers.get("x-user-token");
     if (!token) {
       return NextResponse.json({ error: "No session token" }, { status: 401 });
     }
