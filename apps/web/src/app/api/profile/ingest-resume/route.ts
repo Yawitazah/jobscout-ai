@@ -7,7 +7,7 @@ const ai = new Anthropic();
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const {
-    data: { user, session },
+    data: { user },
     error: authError,
   } = await supabase.auth.getUser();
 
