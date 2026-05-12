@@ -7,6 +7,7 @@ import { Menu, X } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { UserProvider } from "./UserContext";
 import { UserAvatar } from "./UserAvatar";
+import { BellMenu } from "./BellMenu";
 import { navItems, tabItems } from "./NavConfig";
 import { cn } from "@/lib/utils";
 
@@ -41,7 +42,7 @@ function NavLink({
   );
 }
 
-function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
+function TopBar({ onMenuClick, userId }: { onMenuClick: () => void; userId: string }) {
   return (
     <header className="h-14 shrink-0 bg-white border-b border-[#E1E6EE] flex items-center px-4 gap-4 z-30">
       {/* Hamburger — mobile only */}
@@ -61,7 +62,8 @@ function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
         JobScout AI
       </Link>
 
-      {/* Avatar */}
+      {/* Bell + Avatar */}
+      <BellMenu userId={userId} />
       <UserAvatar />
     </header>
   );
@@ -195,7 +197,7 @@ export function AppShell({
   return (
     <UserProvider user={user}>
       <div className="flex flex-col h-screen overflow-hidden">
-        <TopBar onMenuClick={() => setDrawerOpen(true)} />
+        <TopBar onMenuClick={() => setDrawerOpen(true)} userId={user.id} />
 
         <div className="flex flex-1 overflow-hidden">
           <Sidebar />

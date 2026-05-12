@@ -10,6 +10,8 @@ celery_app = Celery(
     include=[
         "app.worker.tasks.scout",
         "app.worker.tasks.scoring",
+        "app.worker.tasks.inbox",
+        "app.worker.tasks.interviews",
     ],
 )
 
@@ -31,6 +33,14 @@ celery_app.conf.update(
         "scout-all-users-afternoon": {
             "task": "app.worker.tasks.scout.scout_all_users",
             "schedule": crontab(hour=20, minute=0),  # 4pm ET
+        },
+        "sync-inboxes": {
+            "task": "app.worker.tasks.inbox.sync_all_inboxes",
+            "schedule": crontab(minute="*/5"),
+        },
+        "send-daily-digests": {
+            "task": "app.worker.tasks.inbox.send_daily_digests",
+            "schedule": crontab(minute="*/15"),
         },
     },
 )

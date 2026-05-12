@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; font-size: 11pt; color: #111; padding: 36px 48px; }
+  h1 { font-size: 22pt; font-weight: 700; text-align: center; margin-bottom: 4px; }
+  h2 { font-size: 12pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+       border-bottom: 1px solid #ccc; margin-top: 16px; margin-bottom: 6px; padding-bottom: 2px; }
+  .summary { margin-top: 8px; line-height: 1.5; }
+  .skills { line-height: 1.6; }
+  .exp-header { display: flex; justify-content: space-between; align-items: baseline; }
+  .exp-title { font-weight: 700; }
+  .exp-dates { font-size: 10pt; color: #555; }
+  ul { margin-left: 18px; margin-top: 4px; }
+  ul li { margin-bottom: 2px; line-height: 1.45; }
+  .edu-row { display: flex; justify-content: space-between; }
+  .edu-degree { font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>{{ full_name }}</h1>
+
+{% if resume.summary %}
+<div class="summary">{{ resume.summary }}</div>
+{% endif %}
+
+{% if resume.skills %}
+<h2>Skills</h2>
+<div class="skills">{{ resume.skills | join(", ") }}</div>
+{% endif %}
+
+{% if resume.experience %}
+<h2>Experience</h2>
+{% for exp in resume.experience %}
+<div style="margin-top: 10px;">
+  <div class="exp-header">
+    <span class="exp-title">{{ exp.title }} &mdash; {{ exp.company }}</span>
+    <span class="exp-dates">{{ exp.start_date or "" }} &ndash; {{ exp.end_date or "Present" }}</span>
+  </div>
+  {% if exp.bullets %}
+  <ul>
+    {% for b in exp.bullets %}<li>{{ b }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+
+{% if resume.education %}
+<h2>Education</h2>
+{% for edu in resume.education %}
+<div class="edu-row" style="margin-top: 6px;">
+  <span class="edu-degree">{{ edu.degree }} &mdash; {{ edu.institution }}</span>
+  <span>{{ edu.graduation_year or "" }}</span>
+</div>
+{% endfor %}
+{% endif %}
+
+</body>
+</html>

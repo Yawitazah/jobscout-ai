@@ -5,6 +5,9 @@ import {
   Calendar,
   User,
   Settings,
+  ClipboardList,
+  Mail,
+  Bell,
   type LucideIcon,
 } from "lucide-react";
 
@@ -21,6 +24,9 @@ export const navItems: NavItem[] = [
   { label: "Interviews", href: "/interviews", icon: Calendar },
   { label: "Profile", href: "/profile", icon: User },
   { label: "Preferences", href: "/preferences", icon: Settings },
+  { label: "App Answers", href: "/settings/application-answers", icon: ClipboardList },
+  { label: "Email", href: "/settings/email", icon: Mail },
+  { label: "Notifications", href: "/settings/notifications", icon: Bell },
 ];
 
 export interface TabItem {

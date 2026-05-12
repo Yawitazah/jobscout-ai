@@ -43,5 +43,22 @@ export async function POST(
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Kick off the application pipeline when a job is approved
+  if (decision === "approve") {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (apiUrl) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        fetch(`${apiUrl}/applications/start/${id}`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }).catch(() => {
+          // Non-blocking — application start failure doesn't fail the decision
+        });
+      }
+    }
+  }
+
   return NextResponse.json(data);
 }
