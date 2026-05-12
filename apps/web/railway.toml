@@ -10,7 +10,9 @@ watchPatterns = [
   "/packages/**",
   "/package.json",
   "/pnpm-lock.yaml",
-  "/pnpm-workspace.yaml"
+  "/pnpm-workspace.yaml",
+  "/nixpacks.toml",
+  "/.nvmrc"
 ]
 
 [deploy]
