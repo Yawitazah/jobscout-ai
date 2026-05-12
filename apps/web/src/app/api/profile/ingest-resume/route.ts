@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
 
   if (dlError || !fileBlob) {
     return NextResponse.json(
-      { error: "Could not download resume file" },
+      { error: `Could not download resume file: ${dlError?.message ?? "unknown"}` },
       { status: 502 }
     );
   }
@@ -71,8 +71,9 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await fileBlob.arrayBuffer();
     const base64 = Buffer.from(arrayBuffer).toString("base64");
 
-    const msg = await ai.messages.create({
-      model: "claude-opus-4-5",
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const messagePayload: any = {
+      model: "claude-3-5-sonnet-20241022",
       max_tokens: 1500,
       messages: [
         {
@@ -85,7 +86,7 @@ export async function POST(req: NextRequest) {
                 media_type: "application/pdf",
                 data: base64,
               },
-            } as Parameters<typeof ai.messages.create>[0]["messages"][0]["content"][0],
+            },
             {
               type: "text",
               text: `Extract this person's professional profile from the resume. Return ONLY valid JSON, no markdown fences.
@@ -103,7 +104,22 @@ Schema:
           ],
         },
       ],
-    });
+    };
+
+    let msg: Awaited<ReturnType<typeof ai.messages.create>>;
+    try {
+      msg = await ai.messages.create(messagePayload);
+    } catch (aiErr: unknown) {
+      await admin
+        .from("resume_uploads")
+        .update({ status: "failed" })
+        .eq("id", upload_id);
+      const msg = aiErr instanceof Error ? aiErr.message : String(aiErr);
+      return NextResponse.json(
+        { error: `AI parsing failed: ${msg}` },
+        { status: 502 }
+      );
+    }
 
     const raw = msg.content[0].type === "text" ? msg.content[0].text.trim() : "{}";
     extractedText = raw;
@@ -111,7 +127,11 @@ Schema:
       const clean = raw.replace(/^```json?\s*/i, "").replace(/```\s*$/, "");
       parsed = JSON.parse(clean);
     } catch {
-      return NextResponse.json({ error: "AI returned invalid data" }, { status: 502 });
+      await admin
+        .from("resume_uploads")
+        .update({ status: "failed" })
+        .eq("id", upload_id);
+      return NextResponse.json({ error: "AI returned invalid JSON — please try again" }, { status: 502 });
     }
   } else {
     // DOCX: not yet supported without FastAPI
@@ -158,30 +178,30 @@ Schema:
   }
 
   // Step 5: Generate clarifying questions about gaps
-  const clarifyMsg = await ai.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 512,
-    system: `You are a career assistant. Given a job seeker's parsed profile, identify up to 3 gaps.
+  let questions: { id: string; question: string; hint: string }[] = [];
+  try {
+    const clarifyMsg = await ai.messages.create({
+      model: "claude-3-5-haiku-20241022",
+      max_tokens: 512,
+      system: `You are a career assistant. Given a job seeker's parsed profile, identify up to 3 gaps.
 Return ONLY a JSON array. No markdown.
 Schema: [{"id":"q1","question":"...","hint":"short placeholder"}]
 Focus on: missing skills context, unclear roles, employment gaps, missing contact info.
 If the profile looks complete, return [].`,
-    messages: [
-      {
-        role: "user",
-        content: JSON.stringify({ ...parsed, ...patch }),
-      },
-    ],
-  });
+      messages: [
+        {
+          role: "user",
+          content: JSON.stringify({ ...parsed, ...patch }),
+        },
+      ],
+    });
 
-  const clarifyRaw =
-    clarifyMsg.content[0].type === "text" ? clarifyMsg.content[0].text.trim() : "[]";
-
-  let questions: { id: string; question: string; hint: string }[] = [];
-  try {
+    const clarifyRaw =
+      clarifyMsg.content[0].type === "text" ? clarifyMsg.content[0].text.trim() : "[]";
     const clean = clarifyRaw.replace(/^```json?\s*/i, "").replace(/```\s*$/, "");
     questions = JSON.parse(clean);
   } catch {
+    // Non-fatal — clarifying questions are optional
     questions = [];
   }
 

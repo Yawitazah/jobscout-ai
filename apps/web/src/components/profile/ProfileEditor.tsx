@@ -33,33 +33,60 @@ interface EducationEntry {
   graduation_year: string | null;
 }
 
+interface ResumeUploadRecord {
+  id: string;
+  created_at: string;
+  status: string;
+  original_filename: string | null;
+  mime_type: string | null;
+}
+
 interface Props {
   initial: Profile;
+  uploads?: ResumeUploadRecord[];
 }
 
 type Tab = "profile" | "resume" | "import";
 
-export function ProfileEditor({ initial }: Props) {
+const STATUS_STYLES: Record<string, string> = {
+  processed: "bg-green-100 text-green-700",
+  processing: "bg-yellow-100 text-yellow-700",
+  uploaded: "bg-blue-100 text-blue-700",
+  failed: "bg-red-100 text-red-700",
+};
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+export function ProfileEditor({ initial, uploads = [] }: Props) {
   const [tab, setTab] = useState<Tab>("resume");
   const [profile, setProfile] = useState<Profile>(initial);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const [lastUploadId, setLastUploadId] = useState<string | null>(null);
   const [questions, setQuestions] = useState<{ id: string; question: string; hint: string }[]>([]);
   const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [ingestError, setIngestError] = useState<string | null>(null);
+
+  // Live list of uploads — starts with server-fetched, updated after new upload
+  const [uploadList, setUploadList] = useState<ResumeUploadRecord[]>(uploads);
 
   async function handleResumeSuccess(uploadId: string) {
-    setLastUploadId(uploadId);
     setQuestionsLoading(true);
+    setIngestError(null);
     try {
       const res = await fetch("/api/profile/ingest-resume", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ upload_id: uploadId }),
       });
+      const data = await res.json();
       if (res.ok) {
-        const data = await res.json();
         // Merge AI-parsed fields into the form
         if (data.profile) {
           setProfile((prev) => ({
@@ -74,11 +101,37 @@ export function ProfileEditor({ initial }: Props) {
           }));
         }
         setQuestions(data.questions ?? []);
+        // Mark this upload as processed in the local list
+        setUploadList((prev) =>
+          prev.map((u) => (u.id === uploadId ? { ...u, status: "processed" } : u))
+        );
+        setTab("profile");
+      } else {
+        setIngestError(data.error ?? `Failed to analyse resume (${res.status})`);
+        // Mark failed
+        setUploadList((prev) =>
+          prev.map((u) => (u.id === uploadId ? { ...u, status: "failed" } : u))
+        );
       }
+    } catch (err) {
+      setIngestError("Network error — could not analyse resume.");
+      console.error(err);
     } finally {
       setQuestionsLoading(false);
-      setTab("profile");
     }
+  }
+
+  // Called by ResumeUpload immediately after the file is stored (before AI parse)
+  async function handleUploadRecorded(uploadId: string, filename: string, mimeType: string) {
+    const newRecord: ResumeUploadRecord = {
+      id: uploadId,
+      created_at: new Date().toISOString(),
+      status: "processing",
+      original_filename: filename,
+      mime_type: mimeType,
+    };
+    setUploadList((prev) => [newRecord, ...prev]);
+    await handleResumeSuccess(uploadId);
   }
 
   async function handleClarifySubmit(answers: Record<string, string>) {
@@ -142,14 +195,61 @@ export function ProfileEditor({ initial }: Props) {
         </nav>
       </div>
 
+      {ingestError && (
+        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          <strong>Resume analysis failed:</strong> {ingestError}
+        </div>
+      )}
+
       {tab === "resume" && (
         <div className="space-y-6">
-          <ResumeUpload onSuccess={handleResumeSuccess} />
+          <ResumeUpload onSuccess={handleUploadRecorded} />
+
           {questionsLoading && (
-            <p className="text-sm text-gray-500 animate-pulse">Analysing resume…</p>
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <svg className="animate-spin h-4 w-4 text-[#1A2B4C]" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+              </svg>
+              Analysing resume with AI…
+            </div>
           )}
+
           {questions.length > 0 && (
             <ClarifyingQuestions questions={questions} onSubmit={handleClarifySubmit} />
+          )}
+
+          {/* Resume upload history */}
+          {uploadList.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-gray-700">Previously uploaded resumes</h3>
+              <div className="divide-y divide-gray-100 rounded-lg border border-gray-200 overflow-hidden">
+                {uploadList.map((u) => (
+                  <div key={u.id} className="flex items-center justify-between px-4 py-3 bg-white">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {/* File icon */}
+                      <svg className="h-5 w-5 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">
+                          {u.original_filename ?? "Resume"}
+                        </p>
+                        <p className="text-xs text-gray-400">{formatDate(u.created_at)}</p>
+                      </div>
+                    </div>
+                    <span
+                      className={`ml-4 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
+                        STATUS_STYLES[u.status] ?? "bg-gray-100 text-gray-600"
+                      }`}
+                    >
+                      {u.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -163,63 +263,116 @@ export function ProfileEditor({ initial }: Props) {
       )}
 
       {tab === "profile" && (
-        <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-6">
+          {/* Basic info */}
+          <div className="space-y-4">
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Basic info</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">Full name</label>
+                <Input
+                  value={profile.full_name ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, full_name: e.target.value }))}
+                  placeholder="Jane Smith"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">Location</label>
+                <Input
+                  value={profile.location ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, location: e.target.value }))}
+                  placeholder="San Francisco, CA"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">Phone</label>
+                <Input
+                  value={profile.phone ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
+                  placeholder="+1 (555) 000-0000"
+                />
+              </div>
+            </div>
+
             <div className="space-y-1">
-              <label className="text-sm font-medium text-gray-700">Full name</label>
-              <Input
-                value={profile.full_name ?? ""}
-                onChange={(e) => setProfile((p) => ({ ...p, full_name: e.target.value }))}
-                placeholder="Jane Smith"
+              <label className="text-sm font-medium text-gray-700">Professional summary</label>
+              <textarea
+                value={profile.summary ?? ""}
+                onChange={(e) => setProfile((p) => ({ ...p, summary: e.target.value }))}
+                rows={4}
+                placeholder="Brief overview of your background and career goals…"
+                className="w-full rounded-[8px] border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2B4C]/30 resize-none"
               />
             </div>
+
             <div className="space-y-1">
-              <label className="text-sm font-medium text-gray-700">Location</label>
+              <label className="text-sm font-medium text-gray-700">
+                Skills{" "}
+                <span className="font-normal text-gray-400">(comma-separated)</span>
+              </label>
               <Input
-                value={profile.location ?? ""}
-                onChange={(e) => setProfile((p) => ({ ...p, location: e.target.value }))}
-                placeholder="San Francisco, CA"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-gray-700">Phone</label>
-              <Input
-                value={profile.phone ?? ""}
-                onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
-                placeholder="+1 (555) 000-0000"
+                value={(profile.skills ?? []).join(", ")}
+                onChange={(e) =>
+                  setProfile((p) => ({
+                    ...p,
+                    skills: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
+                  }))
+                }
+                placeholder="React, TypeScript, Node.js"
               />
             </div>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700">Professional summary</label>
-            <textarea
-              value={profile.summary ?? ""}
-              onChange={(e) => setProfile((p) => ({ ...p, summary: e.target.value }))}
-              rows={4}
-              placeholder="Brief overview of your background and career goals…"
-              className="w-full rounded-[8px] border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1A2B4C]/30 resize-none"
-            />
-          </div>
+          {/* Experience */}
+          {(profile.experience ?? []).length > 0 && (
+            <div className="space-y-3">
+              <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Experience</h2>
+              <div className="space-y-3">
+                {(profile.experience ?? []).map((exp, i) => (
+                  <div key={i} className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-medium text-gray-900 text-sm">{exp.title}</p>
+                        <p className="text-sm text-gray-600">{exp.company}</p>
+                      </div>
+                      <p className="text-xs text-gray-400 shrink-0">
+                        {exp.start_date ?? "?"} – {exp.end_date ?? "Present"}
+                      </p>
+                    </div>
+                    {exp.description && (
+                      <p className="text-sm text-gray-600">{exp.description}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400">
+                Experience is extracted from your resume — re-upload to update.
+              </p>
+            </div>
+          )}
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700">
-              Skills{" "}
-              <span className="font-normal text-gray-400">(comma-separated)</span>
-            </label>
-            <Input
-              value={(profile.skills ?? []).join(", ")}
-              onChange={(e) =>
-                setProfile((p) => ({
-                  ...p,
-                  skills: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
-                }))
-              }
-              placeholder="React, TypeScript, Node.js"
-            />
-          </div>
+          {/* Education */}
+          {(profile.education ?? []).length > 0 && (
+            <div className="space-y-3">
+              <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Education</h2>
+              <div className="space-y-2">
+                {(profile.education ?? []).map((edu, i) => (
+                  <div key={i} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <p className="font-medium text-gray-900 text-sm">{edu.degree}</p>
+                    <p className="text-sm text-gray-600">
+                      {edu.institution}
+                      {edu.graduation_year ? ` · ${edu.graduation_year}` : ""}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400">
+                Education is extracted from your resume — re-upload to update.
+              </p>
+            </div>
+          )}
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 pt-2">
             <Button onClick={handleSave} loading={saving}>
               {saved ? "Saved!" : "Save profile"}
             </Button>
@@ -229,4 +382,3 @@ export function ProfileEditor({ initial }: Props) {
     </div>
   );
 }
-

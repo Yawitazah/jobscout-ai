@@ -7,7 +7,7 @@ import { Upload, FileText, CheckCircle, AlertCircle } from "lucide-react";
 type UploadStatus = "idle" | "uploading" | "success" | "error";
 
 interface ResumeUploadProps {
-  onSuccess?: (id: string) => void;
+  onSuccess?: (id: string, filename: string, mimeType: string) => void;
 }
 
 export function ResumeUpload({ onSuccess }: ResumeUploadProps) {
@@ -40,7 +40,7 @@ export function ResumeUpload({ onSuccess }: ResumeUploadProps) {
 
         setStatus("success");
         setMessage(`${file.name} uploaded successfully`);
-        onSuccess?.(data.id);
+        onSuccess?.(data.id, file.name, file.type);
       } catch {
         setStatus("error");
         setMessage("Network error. Please try again.");

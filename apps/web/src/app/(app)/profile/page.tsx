@@ -25,5 +25,13 @@ export default async function ProfilePage() {
     education: [],
   };
 
-  return <ProfileEditor initial={initial} />;
+  // Fetch resume upload history
+  const { data: uploads } = await supabase
+    .from("resume_uploads")
+    .select("id, created_at, status, original_filename, mime_type")
+    .eq("user_id", user!.id)
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  return <ProfileEditor initial={initial} uploads={uploads ?? []} />;
 }
