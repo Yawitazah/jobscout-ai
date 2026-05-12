@@ -34,7 +34,7 @@ export default async function AutoDecisionsPage() {
           Jobs automatically approved or rejected in the last 24 hours.
         </p>
       </div>
-      <AutoDecisionsList items={data ?? []} />
+      <AutoDecisionsList items={(data ?? []) as any} />
     </div>
   );
 }
