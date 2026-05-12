@@ -53,23 +53,27 @@ export function ProfileEditor({ initial }: Props) {
     setLastUploadId(uploadId);
     setQuestionsLoading(true);
     try {
-      const [extractRes, clarifyRes] = await Promise.all([
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/resumes/${uploadId}/extract`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${await getToken()}` },
-        }),
-        Promise.resolve(null),
-      ]);
-      if (extractRes.ok) {
-        const clarifyResponse = await fetch("/api/profile/clarify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ upload_id: uploadId }),
-        });
-        if (clarifyResponse.ok) {
-          const data = await clarifyResponse.json();
-          setQuestions(data.questions ?? []);
+      const res = await fetch("/api/profile/ingest-resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ upload_id: uploadId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // Merge AI-parsed fields into the form
+        if (data.profile) {
+          setProfile((prev) => ({
+            ...prev,
+            full_name: data.profile.full_name ?? prev.full_name,
+            location: data.profile.location ?? prev.location,
+            phone: data.profile.phone ?? prev.phone,
+            summary: data.profile.summary ?? prev.summary,
+            skills: data.profile.skills?.length ? data.profile.skills : prev.skills,
+            experience: data.profile.experience?.length ? data.profile.experience : prev.experience,
+            education: data.profile.education?.length ? data.profile.education : prev.education,
+          }));
         }
+        setQuestions(data.questions ?? []);
       }
     } finally {
       setQuestionsLoading(false);
@@ -226,9 +230,3 @@ export function ProfileEditor({ initial }: Props) {
   );
 }
 
-async function getToken(): Promise<string> {
-  const { createClient } = await import("@/lib/supabase/client");
-  const supabase = createClient();
-  const { data } = await supabase.auth.getSession();
-  return data.session?.access_token ?? "";
-}
