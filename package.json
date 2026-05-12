@@ -1,0 +1,11 @@
+{
+  "name": "jobscout-ai",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "lint": "pnpm --filter web lint"
+  },
+  "packageManager": "pnpm@11.1.0"
+}
