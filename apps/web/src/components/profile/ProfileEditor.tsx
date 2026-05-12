@@ -75,6 +75,19 @@ export function ProfileEditor({ initial, uploads = [] }: Props) {
 
   // Live list of uploads — starts with server-fetched, updated after new upload
   const [uploadList, setUploadList] = useState<ResumeUploadRecord[]>(uploads);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  async function handleDeleteUpload(id: string) {
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/upload/resume/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setUploadList((prev) => prev.filter((u) => u.id !== id));
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   async function handleResumeSuccess(uploadId: string) {
     setQuestionsLoading(true);
@@ -239,13 +252,33 @@ export function ProfileEditor({ initial, uploads = [] }: Props) {
                         <p className="text-xs text-gray-400">{formatDate(u.created_at)}</p>
                       </div>
                     </div>
-                    <span
-                      className={`ml-4 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                        STATUS_STYLES[u.status] ?? "bg-gray-100 text-gray-600"
-                      }`}
-                    >
-                      {u.status}
-                    </span>
+                    <div className="ml-4 flex items-center gap-3 shrink-0">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
+                          STATUS_STYLES[u.status] ?? "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {u.status}
+                      </span>
+                      <button
+                        onClick={() => handleDeleteUpload(u.id)}
+                        disabled={deletingId === u.id}
+                        className="text-gray-400 hover:text-red-500 transition-colors disabled:opacity-40"
+                        title="Delete upload"
+                      >
+                        {deletingId === u.id ? (
+                          <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                          </svg>
+                        ) : (
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

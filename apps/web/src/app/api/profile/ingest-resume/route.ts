@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const messagePayload: any = {
-      model: "claude-3-5-sonnet-20241022",
+      model: "claude-sonnet-4-5",
       max_tokens: 1500,
       messages: [
         {
@@ -181,7 +181,7 @@ Schema:
   let questions: { id: string; question: string; hint: string }[] = [];
   try {
     const clarifyMsg = await ai.messages.create({
-      model: "claude-3-5-haiku-20241022",
+      model: "claude-haiku-4-5",
       max_tokens: 512,
       system: `You are a career assistant. Given a job seeker's parsed profile, identify up to 3 gaps.
 Return ONLY a JSON array. No markdown.
