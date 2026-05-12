@@ -112,18 +112,22 @@ export default function QueuePage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [items, handleDecision, handleUndo]);
 
+  const [triggerError, setTriggerError] = useState<string | null>(null);
+
   const triggerScout = async () => {
     setTriggering(true);
+    setTriggerError(null);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-      if (apiUrl) {
-        await fetch(`${apiUrl}/api/admin/scout/trigger`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        });
+      const res = await fetch("/api/scout/trigger", { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setTriggerError(data.error ?? `Failed (${res.status})`);
+        return;
       }
-      setTimeout(() => load(true), 3000);
+      // Wait a few seconds for Celery to pick up the task, then refresh
+      setTimeout(() => load(true), 5000);
+    } catch {
+      setTriggerError("Network error — could not trigger scout.");
     } finally {
       setTriggering(false);
     }
@@ -161,8 +165,22 @@ export default function QueuePage() {
             disabled={triggering}
             className="inline-flex items-center gap-2 text-sm font-medium text-[#1A2B4C] border border-[#1A2B4C] px-4 py-2 rounded-[8px] hover:bg-[#F7F9FC] disabled:opacity-60"
           >
-            {triggering ? "Triggering..." : "Trigger scout now"}
+            {triggering ? (
+              <>
+                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                Triggering…
+              </>
+            ) : "Trigger scout now"}
           </button>
+          {triggering && (
+            <p className="text-xs text-gray-400">Scout is running — matches will appear in ~30 seconds</p>
+          )}
+          {triggerError && (
+            <p className="text-xs text-red-500">{triggerError}</p>
+          )}
         </div>
       ) : (
         <CardStack items={items} onDecision={handleDecision} />
