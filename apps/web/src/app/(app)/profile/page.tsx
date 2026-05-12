@@ -1,12 +1,29 @@
-import { User } from "lucide-react";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { createClient } from "@/lib/supabase/server";
+import { ProfileEditor } from "@/components/profile/ProfileEditor";
 
-export default function ProfilePage() {
-  return (
-    <EmptyState
-      icon={User}
-      title="Profile setup coming in Phase 2."
-      description="You will be able to configure your resume, skills, and job preferences here."
-    />
-  );
+export default async function ProfilePage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id, full_name, email, phone, location, summary, skills, experience, education")
+    .eq("id", user!.id)
+    .single();
+
+  const initial = profile ?? {
+    id: user!.id,
+    full_name: null,
+    email: user!.email ?? null,
+    phone: null,
+    location: null,
+    summary: null,
+    skills: [],
+    experience: [],
+    education: [],
+  };
+
+  return <ProfileEditor initial={initial} />;
 }
