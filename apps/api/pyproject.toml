@@ -1,0 +1,23 @@
+[project]
+name = "jobscout-api"
+version = "0.1.0"
+description = "FastAPI service for JobScout AI"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "anthropic",
+    "fastapi",
+    "httpx",
+    "pydantic-settings",
+    "python-jose[cryptography]",
+    "python-multipart",
+    "supabase",
+    "uvicorn[standard]",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]

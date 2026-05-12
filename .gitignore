@@ -27,5 +27,6 @@ dist/
 # Misc
 .DS_Store
 *.log
+_tmp_*
 .turbo/
 .vercel/
