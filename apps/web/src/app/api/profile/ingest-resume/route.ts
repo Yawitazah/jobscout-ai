@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 const ai = new Anthropic();
+
+// Admin client uses service role — bypasses RLS for storage download
+function getAdminClient() {
+  return createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
@@ -15,13 +24,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { upload_id } = await req.json();
+  const body = await req.json();
+  const upload_id = body?.upload_id;
   if (!upload_id) {
     return NextResponse.json({ error: "upload_id required" }, { status: 400 });
   }
 
   // Confirm the upload belongs to this user
-  const { data: upload, error: uploadErr } = await supabase
+  const admin = getAdminClient();
+  const { data: upload, error: uploadErr } = await admin
     .from("resume_uploads")
     .select("id, user_id, storage_path, mime_type, status, extracted_text")
     .eq("id", upload_id)
@@ -31,91 +42,96 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Upload not found" }, { status: 404 });
   }
 
-  // Step 1: extract text via FastAPI if not already done
-  let extractedText = upload.extracted_text as string | null;
+  // Step 1: Download file bytes from storage using admin client
+  const { data: fileBlob, error: dlError } = await admin.storage
+    .from("resumes")
+    .download(upload.storage_path as string);
 
-  if (!extractedText && upload.status !== "processed") {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? process.env.INTERNAL_API_URL;
-    if (!apiUrl) {
-      return NextResponse.json(
-        { error: "API service not configured" },
-        { status: 503 }
-      );
-    }
-
-    // The client passes its JWT in X-User-Token for server-to-server FastAPI call
-    const token = req.headers.get("x-user-token");
-    if (!token) {
-      return NextResponse.json({ error: "No session token" }, { status: 401 });
-    }
-
-    const extractRes = await fetch(`${apiUrl}/resumes/${upload_id}/extract`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (!extractRes.ok) {
-      const body = await extractRes.text().catch(() => "");
-      return NextResponse.json(
-        { error: `Extraction failed: ${body || extractRes.status}` },
-        { status: 502 }
-      );
-    }
-
-    // Re-fetch the record to get extracted_text now that extract ran
-    const { data: fresh } = await supabase
-      .from("resume_uploads")
-      .select("extracted_text")
-      .eq("id", upload_id)
-      .single();
-
-    extractedText = (fresh?.extracted_text as string | null) ?? null;
-  }
-
-  if (!extractedText) {
+  if (dlError || !fileBlob) {
     return NextResponse.json(
-      { error: "Could not extract text from resume" },
-      { status: 422 }
+      { error: "Could not download resume file" },
+      { status: 502 }
     );
   }
 
-  const snippet = extractedText.slice(0, 8000);
+  const mimeType = upload.mime_type as string;
+  const isPdf = mimeType === "application/pdf";
 
-  // Step 2: parse resume into structured profile fields
-  const parseMsg = await ai.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 1024,
-    system: `Extract professional profile data from this resume text. Return ONLY valid JSON, no markdown.
+  // Mark as processing
+  await admin
+    .from("resume_uploads")
+    .update({ status: "processing" })
+    .eq("id", upload_id);
+
+  let parsed: Record<string, unknown> = {};
+  let extractedText = "";
+
+  if (isPdf) {
+    // Step 2a: Send PDF directly to Claude — it reads PDFs natively
+    const arrayBuffer = await fileBlob.arrayBuffer();
+    const base64 = Buffer.from(arrayBuffer).toString("base64");
+
+    const msg = await ai.messages.create({
+      model: "claude-opus-4-5",
+      max_tokens: 1500,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "document",
+              source: {
+                type: "base64",
+                media_type: "application/pdf",
+                data: base64,
+              },
+            } as Parameters<typeof ai.messages.create>[0]["messages"][0]["content"][0],
+            {
+              type: "text",
+              text: `Extract this person's professional profile from the resume. Return ONLY valid JSON, no markdown fences.
 Schema:
 {
   "full_name": "string or null",
-  "location": "string or null",
+  "location": "city, state or null",
   "phone": "string or null",
   "summary": "2-3 sentence professional summary",
   "skills": ["skill1", "skill2"],
   "experience": [{"title":"","company":"","start_date":"YYYY-MM or null","end_date":"YYYY-MM or null","description":"1-2 sentences"}],
   "education": [{"degree":"","institution":"","graduation_year":"YYYY or null"}]
-}
-Keep experience descriptions concise. Include all relevant skills as individual strings.`,
-    messages: [{ role: "user", content: snippet }],
-  });
+}`,
+            },
+          ],
+        },
+      ],
+    });
 
-  const parseRaw =
-    parseMsg.content[0].type === "text" ? parseMsg.content[0].text.trim() : "{}";
-
-  let parsed: Record<string, unknown> = {};
-  try {
-    // Strip markdown code fences if Claude wrapped it
-    const clean = parseRaw.replace(/^```json?\s*/i, "").replace(/```\s*$/, "");
-    parsed = JSON.parse(clean);
-  } catch {
+    const raw = msg.content[0].type === "text" ? msg.content[0].text.trim() : "{}";
+    extractedText = raw;
+    try {
+      const clean = raw.replace(/^```json?\s*/i, "").replace(/```\s*$/, "");
+      parsed = JSON.parse(clean);
+    } catch {
+      return NextResponse.json({ error: "AI returned invalid data" }, { status: 502 });
+    }
+  } else {
+    // DOCX: not yet supported without FastAPI
+    await admin
+      .from("resume_uploads")
+      .update({ status: "failed" })
+      .eq("id", upload_id);
     return NextResponse.json(
-      { error: "AI returned invalid data" },
-      { status: 502 }
+      { error: "DOCX files are not yet supported. Please upload a PDF." },
+      { status: 422 }
     );
   }
 
-  // Step 3: upsert into profiles table
+  // Step 3: Save extracted text + mark processed
+  await admin
+    .from("resume_uploads")
+    .update({ status: "processed", extracted_text: extractedText })
+    .eq("id", upload_id);
+
+  // Step 4: Upsert into profiles table
   const patch: Record<string, unknown> = {};
   const fieldMap: Record<string, string> = {
     full_name: "full_name",
@@ -138,28 +154,22 @@ Keep experience descriptions concise. Include all relevant skills as individual 
   }
 
   if (Object.keys(patch).length > 0) {
-    await supabase.from("profiles").update(patch).eq("id", user.id);
+    await admin.from("profiles").update(patch).eq("id", user.id);
   }
 
-  // Step 4: generate clarifying questions about gaps
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name, summary, skills, experience, education, location, phone")
-    .eq("id", user.id)
-    .single();
-
+  // Step 5: Generate clarifying questions about gaps
   const clarifyMsg = await ai.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 512,
-    system: `You are a career assistant. Given a job seeker's profile, identify up to 3 gaps that would help employers evaluate them.
-Return ONLY a JSON array. No markdown, no explanation.
+    system: `You are a career assistant. Given a job seeker's parsed profile, identify up to 3 gaps.
+Return ONLY a JSON array. No markdown.
 Schema: [{"id":"q1","question":"...","hint":"short placeholder"}]
-Focus on: missing skills context, unclear job titles, employment gaps, missing contact info.
+Focus on: missing skills context, unclear roles, employment gaps, missing contact info.
 If the profile looks complete, return [].`,
     messages: [
       {
         role: "user",
-        content: `Profile:\n${JSON.stringify(profile ?? {})}\n\nResume snippet:\n${snippet.slice(0, 3000)}`,
+        content: JSON.stringify({ ...parsed, ...patch }),
       },
     ],
   });
@@ -177,7 +187,7 @@ If the profile looks complete, return [].`,
 
   return NextResponse.json({
     fields_updated: fieldsUpdated,
-    profile: { ...profile, ...patch },
+    profile: { ...parsed, ...patch },
     questions,
   });
 }

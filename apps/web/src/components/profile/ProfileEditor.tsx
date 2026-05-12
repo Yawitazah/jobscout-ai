@@ -53,19 +53,9 @@ export function ProfileEditor({ initial }: Props) {
     setLastUploadId(uploadId);
     setQuestionsLoading(true);
     try {
-      // Get the user's JWT from the browser session and pass it to the
-      // server route, which forwards it to the FastAPI extract service.
-      const { createClient } = await import("@/lib/supabase/client");
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token ?? "";
-
       const res = await fetch("/api/profile/ingest-resume", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-User-Token": token,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ upload_id: uploadId }),
       });
       if (res.ok) {
