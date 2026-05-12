@@ -1,8 +1,5 @@
-[variables]
-NPM_CONFIG_PREFIX = "/usr/local"
-
 [phases.setup]
 nixPkgs = ["nodejs_22"]
 
 [phases.install]
-cmds = ["npm install -g pnpm@11.1.0", "pnpm install --frozen-lockfile"]
+cmds = ["npm install -g pnpm@11.1.0 && ln -sf $(npm prefix -g)/bin/pnpm /usr/bin/pnpm && pnpm install --frozen-lockfile"]
