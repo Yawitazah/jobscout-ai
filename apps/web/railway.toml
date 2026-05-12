@@ -1,9 +1,10 @@
 # Railway service: web
-# Root directory in Railway dashboard: apps/web
+# Root directory in Railway dashboard: /
+# Config file path in Railway dashboard: /apps/web/railway.toml
 
 [build]
 builder = "NIXPACKS"
-buildCommand = "cd ../.. && pnpm install && pnpm --filter web build"
+buildCommand = "pnpm --filter web build"
 watchPatterns = [
   "/apps/web/**",
   "/packages/**",
