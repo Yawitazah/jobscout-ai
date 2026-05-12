@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "JobScout AI",
+    "slug": "jobscout-ai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "jobscoutai",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1A2B4C"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.zahbrandsolutions.jobscoutai",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1A2B4C",
+        "foregroundImage": "./assets/images/android-icon-foreground.png"
+      },
+      "package": "com.zahbrandsolutions.jobscoutai",
+      "versionCode": 1,
+      "permissions": ["NOTIFICATIONS", "INTERNET"]
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#1A2B4C"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
