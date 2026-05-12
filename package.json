@@ -8,7 +8,7 @@
     "lint": "pnpm --filter web lint"
   },
   "engines": {
-    "node": ">=22"
+    "node": "22.x"
   },
   "packageManager": "pnpm@11.1.0"
 }
