@@ -4,6 +4,11 @@ import { createClient } from "@/lib/supabase/server";
 import { exchangeCode, getUserEmail } from "@/lib/google/oauth";
 import { encrypt } from "@/lib/google/encrypt";
 
+function appUrl(path: string): URL {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? process.env.GOOGLE_REDIRECT_URI?.replace("/api/auth/gmail/callback", "") ?? "http://localhost:3000";
+  return new URL(path, base);
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const code = searchParams.get("code");
@@ -11,11 +16,11 @@ export async function GET(req: NextRequest) {
   const error = searchParams.get("error");
 
   if (error) {
-    return NextResponse.redirect(new URL("/settings/email?error=denied", req.url));
+    return NextResponse.redirect(appUrl("/settings/email?error=denied"));
   }
 
   if (!code || !state) {
-    return NextResponse.redirect(new URL("/settings/email?error=invalid", req.url));
+    return NextResponse.redirect(appUrl("/settings/email?error=invalid"));
   }
 
   const cookieStore = await cookies();
@@ -23,27 +28,27 @@ export async function GET(req: NextRequest) {
   cookieStore.delete("gmail_oauth_state");
 
   if (!savedState || savedState !== state) {
-    return NextResponse.redirect(new URL("/settings/email?error=state_mismatch", req.url));
+    return NextResponse.redirect(appUrl("/settings/email?error=state_mismatch"));
   }
 
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
-    return NextResponse.redirect(new URL("/login", req.url));
+    return NextResponse.redirect(appUrl("/login"));
   }
 
   let tokens: { accessToken: string; refreshToken: string | null; expiresAt: Date | null };
   try {
     tokens = await exchangeCode(code);
   } catch {
-    return NextResponse.redirect(new URL("/settings/email?error=token_exchange", req.url));
+    return NextResponse.redirect(appUrl("/settings/email?error=token_exchange"));
   }
 
   let emailAddress: string;
   try {
     emailAddress = await getUserEmail(tokens.accessToken);
   } catch {
-    return NextResponse.redirect(new URL("/settings/email?error=userinfo", req.url));
+    return NextResponse.redirect(appUrl("/settings/email?error=userinfo"));
   }
 
   const encryptedAccess = encrypt(tokens.accessToken);
@@ -63,8 +68,8 @@ export async function GET(req: NextRequest) {
   );
 
   if (upsertError) {
-    return NextResponse.redirect(new URL("/settings/email?error=db", req.url));
+    return NextResponse.redirect(appUrl("/settings/email?error=db"));
   }
 
-  return NextResponse.redirect(new URL("/settings/email?connected=true", req.url));
+  return NextResponse.redirect(appUrl("/settings/email?connected=true"));
 }
