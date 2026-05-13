@@ -118,6 +118,25 @@ export default function ApplicationDetailPage({
     };
   }, [id]);
 
+  // Polling fallback — realtime can miss events if the status changes very quickly.
+  // While in an in-progress state, poll every 5 s so the UI never stays stuck.
+  useEffect(() => {
+    const IN_PROGRESS = ["tailoring_resume", "writing_cover_letter", "submitting"];
+    if (!app || !IN_PROGRESS.includes(app.status)) return;
+
+    const timer = setInterval(() => {
+      fetch(`/api/applications/${id}`)
+        .then((r) => r.json())
+        .then((fresh) => {
+          if (fresh?.status && fresh.status !== app.status) {
+            setApp(fresh);
+          }
+        });
+    }, 5000);
+
+    return () => clearInterval(timer);
+  }, [id, app?.status]);
+
   async function triggerSubmit() {
     if (!app?.user_job?.id) return;
     setSubmitting(true);
