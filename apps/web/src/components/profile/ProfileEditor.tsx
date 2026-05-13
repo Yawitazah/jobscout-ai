@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/Input";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface ExperienceEntry {
+export interface ExperienceEntry {
   title: string;
   company: string;
   start_date: string | null;
@@ -17,32 +17,32 @@ interface ExperienceEntry {
   description: string;
 }
 
-interface EducationEntry {
+export interface EducationEntry {
   degree: string;
   institution: string;
   graduation_year: string | null;
 }
 
-interface CertEntry {
+export interface CertEntry {
   name: string;
   issuer: string;
   year: string | null;
 }
 
-interface ProjectEntry {
+export interface ProjectEntry {
   name: string;
   description: string;
   technologies: string[];
 }
 
-interface Memory {
+export interface Memory {
   id: string;
   source: string;
   content: string;
   created_at: string;
 }
 
-interface Profile {
+export interface Profile {
   id: string;
   full_name: string | null;
   email: string | null;

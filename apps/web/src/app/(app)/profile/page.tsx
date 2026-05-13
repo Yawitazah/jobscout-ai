@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { ProfileEditor } from "@/components/profile/ProfileEditor";
+import type { Profile } from "@/components/profile/ProfileEditor";
 
 export default async function ProfilePage() {
   const supabase = await createClient();
@@ -7,7 +8,9 @@ export default async function ProfilePage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { data: profile } = await supabase
+  // Cast via unknown to avoid Supabase generated-type errors for newly migrated columns
+  // (certifications, projects, languages, linkedin_url, github_url, portfolio_url, additional_context)
+  const { data: profileData } = await supabase
     .from("profiles")
     .select(
       "id, full_name, email, phone, location, summary, skills, experience, education, " +
@@ -17,7 +20,9 @@ export default async function ProfilePage() {
     .eq("id", user!.id)
     .single();
 
-  const initial = profile ?? {
+  const profile = profileData as unknown as Profile | null;
+
+  const initial: Profile = profile ?? {
     id: user!.id,
     full_name: null,
     email: user!.email ?? null,
@@ -56,7 +61,7 @@ export default async function ProfilePage() {
     <ProfileEditor
       initial={initial}
       uploads={uploads ?? []}
-      initialMemories={memories ?? []}
+      initialMemories={(memories ?? []) as Array<{ id: string; source: string; content: string; created_at: string }>}
     />
   );
 }
