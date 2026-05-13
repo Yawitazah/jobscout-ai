@@ -12,6 +12,7 @@ import {
   Play,
   Loader2,
   RefreshCw,
+  Mail,
 } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 
@@ -46,6 +47,7 @@ const APP_STATUS: Record<string, { label: string; color: string; icon: React.Ele
   submitting:           { label: "Submitting…",             color: "text-yellow-700 bg-yellow-50", icon: Clock        },
   submitted:            { label: "Submitted ✓",             color: "text-green-700 bg-green-50",   icon: CheckCircle  },
   submit_failed:        { label: "Failed",                  color: "text-red-700 bg-red-50",       icon: XCircle      },
+  more_info_needed:     { label: "More info needed",        color: "text-amber-700 bg-amber-50",   icon: AlertCircle  },
   withdrawn:            { label: "Withdrawn",               color: "text-gray-400 bg-gray-50",     icon: AlertCircle  },
 };
 
@@ -130,7 +132,7 @@ export default function ApplicationsPage() {
     const s = effectiveStatus(j.application);
     if (filter === "in_progress") return ["queued", "draft", "tailoring_resume", "writing_cover_letter", "ready_to_submit", "submitting"].includes(s);
     if (filter === "submitted") return s === "submitted";
-    if (filter === "failed") return s === "submit_failed";
+    if (filter === "failed") return ["submit_failed", "more_info_needed"].includes(s);
     return true;
   });
 
@@ -285,6 +287,16 @@ export default function ApplicationsPage() {
                       className="text-xs font-medium text-[#1A2B4C] hover:underline"
                     >
                       View details →
+                    </Link>
+                  )}
+
+                  {/* More info needed — open Scout */}
+                  {status === "more_info_needed" && app?.id && (
+                    <Link
+                      href={`/scout?applicationId=${app.id}`}
+                      className="flex items-center gap-1.5 text-xs font-medium bg-amber-500 text-white px-3 py-1.5 rounded-lg hover:bg-amber-600 transition-colors"
+                    >
+                      <Mail size={11} /> Provide Details
                     </Link>
                   )}
 
