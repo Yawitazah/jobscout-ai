@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Building2, MapPin, DollarSign, Briefcase } from "lucide-react";
+import { Building2, MapPin, DollarSign, Briefcase, ExternalLink } from "lucide-react";
 import { MatchScoreRing } from "./MatchScoreRing";
 import { ActionBar } from "./ActionBar";
 
@@ -44,9 +44,8 @@ interface Props {
 
 function formatSalary(min: number | null, max: number | null, currency: string): string | null {
   if (!min && !max) return null;
-  const fmt = (n: number) =>
-    n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
-  if (min && max) return `${currency} ${fmt(min)} - ${fmt(max)}`;
+  const fmt = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+  if (min && max) return `${currency} ${fmt(min)} – ${fmt(max)}`;
   if (min) return `${currency} ${fmt(min)}+`;
   return `up to ${currency} ${fmt(max!)}`;
 }
@@ -74,29 +73,32 @@ export function JobCard({ item, onDecision, isActive, stackIndex }: Props) {
         pointerEvents: isActive ? "auto" : "none",
       }}
     >
-      <div className="flex flex-col flex-1 p-6 overflow-y-auto">
-        {/* Header */}
+      <div className="flex flex-col flex-1 p-6 overflow-y-auto min-h-0">
+        {/* ── Header ── */}
         <div className="flex items-start justify-between gap-3 mb-4">
           <div className="flex items-center gap-3">
             {job.company?.logo_url ? (
               <img
                 src={job.company.logo_url}
                 alt={job.company.name}
-                className="w-12 h-12 rounded-xl object-contain border border-gray-100"
+                className="w-12 h-12 rounded-xl object-contain border border-gray-100 shrink-0"
               />
             ) : (
-              <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center">
+              <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
                 <Building2 size={20} className="text-gray-400" />
               </div>
             )}
             <div>
-              <p className="font-medium text-gray-900 text-sm capitalize">{job.company?.name ?? "Unknown"}</p>
+              <p className="font-semibold text-gray-900 text-sm capitalize leading-tight">
+                {job.company?.name ?? "Unknown"}
+              </p>
               {job.company?.website && (
                 <a
                   href={job.company.website}
                   target="_blank"
                   rel="noreferrer"
                   className="text-xs text-gray-400 hover:underline"
+                  onClick={(e) => e.stopPropagation()}
                 >
                   {job.company.website.replace(/^https?:\/\//, "")}
                 </a>
@@ -104,20 +106,20 @@ export function JobCard({ item, onDecision, isActive, stackIndex }: Props) {
             </div>
           </div>
           {postedDate && (
-            <span className="text-xs text-gray-400 whitespace-nowrap">{postedDate}</span>
+            <span className="text-xs text-gray-400 whitespace-nowrap shrink-0">{postedDate}</span>
           )}
         </div>
 
-        {/* Title */}
-        <h2 className="text-[22px] font-bold text-gray-900 leading-tight mb-3">
+        {/* ── Title ── */}
+        <h2 className="text-[20px] font-bold text-gray-900 leading-tight mb-3">
           {job.title}
         </h2>
 
-        {/* Badges */}
-        <div className="flex flex-wrap gap-2 mb-4">
+        {/* ── Badges ── */}
+        <div className="flex flex-wrap gap-1.5 mb-4">
           {job.location && (
             <span className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
-              <MapPin size={11} />
+              <MapPin size={10} />
               {job.location}
             </span>
           )}
@@ -128,21 +130,21 @@ export function JobCard({ item, onDecision, isActive, stackIndex }: Props) {
           )}
           {job.employment_type && (
             <span className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
-              <Briefcase size={11} />
+              <Briefcase size={10} />
               {job.employment_type}
             </span>
           )}
           {salary && (
             <span className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
-              <DollarSign size={11} />
+              <DollarSign size={10} />
               {salary}
             </span>
           )}
         </div>
 
-        {/* Score ring + reasons */}
+        {/* ── Score + reasons ── */}
         <div className="flex items-center gap-4 mb-4">
-          <MatchScoreRing score={score} size={80} />
+          <MatchScoreRing score={score} size={72} />
           <div className="flex flex-wrap gap-1.5">
             {match_reasons.slice(0, 4).map((r, i) => (
               <span
@@ -155,36 +157,48 @@ export function JobCard({ item, onDecision, isActive, stackIndex }: Props) {
           </div>
         </div>
 
-        {/* Description */}
-        <div className="text-sm text-gray-600 leading-relaxed">
+        {/* ── Description ── */}
+        <div className="text-sm text-gray-600 leading-relaxed mb-4">
           <p className={expanded ? "" : "line-clamp-3"}>
             {(job.description || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()}
           </p>
           {!expanded && (
             <button
-              onClick={() => setExpanded(true)}
+              onClick={(e) => { e.stopPropagation(); setExpanded(true); }}
               className="text-[#1A2B4C] text-xs font-medium mt-1 hover:underline"
             >
               Read full description
             </button>
           )}
-          {expanded && (
-            <div className="mt-3 pt-3 border-t border-gray-100">
-              <a
-                href={job.source_url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[#1A2B4C] text-xs font-medium hover:underline"
-              >
-                View original posting
-              </a>
-            </div>
-          )}
+        </div>
+
+        {/* ── View buttons ── */}
+        <div className="flex flex-col gap-2 mt-auto pt-3 border-t border-gray-100">
+          <a
+            href={job.source_url}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center justify-center gap-2 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg px-3 py-2 hover:border-gray-400 hover:text-gray-800 transition-colors"
+          >
+            <ExternalLink size={12} />
+            View Original Listing
+          </a>
+          <a
+            href={job.source_url}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center justify-center gap-2 text-xs font-semibold text-[#1A2B4C] border border-[#1A2B4C] rounded-lg px-3 py-2 hover:bg-[#1A2B4C] hover:text-white transition-colors"
+          >
+            <ExternalLink size={12} />
+            View &amp; Manually Apply
+          </a>
         </div>
       </div>
 
-      {/* Action bar */}
-      <div className="px-6 pb-6">
+      {/* ── Action bar ── */}
+      <div className="px-6 pb-6 shrink-0">
         <ActionBar
           onReject={() => onDecision("reject")}
           onSave={() => onDecision("save")}

@@ -9,6 +9,7 @@ import {
   Mail,
   Bell,
   Crosshair,
+  Bookmark,
   type LucideIcon,
 } from "lucide-react";
 
@@ -19,16 +20,17 @@ export interface NavItem {
 }
 
 export const navItems: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Scout", href: "/scout", icon: Crosshair },
-  { label: "Job Queue", href: "/queue", icon: Inbox },
-  { label: "Applications", href: "/applications", icon: FileText },
-  { label: "Interviews", href: "/interviews", icon: Calendar },
-  { label: "Profile", href: "/profile", icon: User },
-  { label: "Preferences", href: "/preferences", icon: Settings },
-  { label: "App Answers", href: "/settings/application-answers", icon: ClipboardList },
-  { label: "Email", href: "/settings/email", icon: Mail },
-  { label: "Notifications", href: "/settings/notifications", icon: Bell },
+  { label: "Dashboard",    href: "/dashboard",                    icon: LayoutDashboard },
+  { label: "Scout",        href: "/scout",                        icon: Crosshair       },
+  { label: "Job Queue",    href: "/queue",                        icon: Inbox           },
+  { label: "Saved",        href: "/saved",                        icon: Bookmark        },
+  { label: "Applications", href: "/applications",                 icon: FileText        },
+  { label: "Interviews",   href: "/interviews",                   icon: Calendar        },
+  { label: "Profile",      href: "/profile",                      icon: User            },
+  { label: "Preferences",  href: "/preferences",                  icon: Settings        },
+  { label: "App Answers",  href: "/settings/application-answers", icon: ClipboardList   },
+  { label: "Email",        href: "/settings/email",               icon: Mail            },
+  { label: "Notifications",href: "/settings/notifications",       icon: Bell            },
 ];
 
 export interface TabItem {
@@ -38,8 +40,8 @@ export interface TabItem {
 }
 
 export const tabItems: TabItem[] = [
-  { label: "Queue", href: "/queue", icon: Inbox },
-  { label: "Scout", href: "/scout", icon: Crosshair },
-  { label: "Interviews", href: "/interviews", icon: Calendar },
-  { label: "More", href: null, icon: LayoutDashboard },
+  { label: "Queue",  href: "/queue",        icon: Inbox     },
+  { label: "Saved",  href: "/saved",        icon: Bookmark  },
+  { label: "Applied",href: "/applications", icon: FileText  },
+  { label: "More",   href: null,            icon: LayoutDashboard },
 ];
