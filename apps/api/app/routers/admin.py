@@ -5,7 +5,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from app.deps import get_current_user, get_supabase_admin
+from app.deps import get_current_user, get_service_or_user, get_supabase_admin
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -21,7 +21,7 @@ class ScoreOneBody(BaseModel):
 @router.post("/scout/trigger")
 def trigger_scout(
     body: TriggerBody,
-    user: Annotated[dict[str, Any], Depends(get_current_user)],
+    user: Annotated[dict[str, Any], Depends(get_service_or_user)],
 ):
     from app.worker.tasks.scout import scout_for_user
 
