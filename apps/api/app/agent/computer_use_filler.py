@@ -167,22 +167,22 @@ class ComputerUseFiller:
 
         tools = [
             {
-                "type": "computer_20241022",
+                "type": "computer_20250124",
                 "name": "computer",
                 "display_width_px": VIEWPORT_W,
                 "display_height_px": VIEWPORT_H,
-                "display_number": 1,
             }
         ]
 
         for iteration in range(MAX_ITERATIONS):
             try:
-                response = client.messages.create(
+                response = client.beta.messages.create(
                     model="claude-opus-4-5",
                     max_tokens=4096,
                     system=system_prompt,
                     tools=tools,
                     messages=messages,
+                    betas=["computer-use-2025-01-24"],
                 )
             except Exception as exc:
                 logger.error("Anthropic API error on iteration %d: %s", iteration, exc)

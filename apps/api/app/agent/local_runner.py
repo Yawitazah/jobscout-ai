@@ -47,7 +47,7 @@ def _load_agent_env() -> None:
         for directory in (pathlib.Path.cwd(), pathlib.Path.cwd().parent):
             candidate = directory / name
             if candidate.exists():
-                load_dotenv(candidate, override=False)
+                load_dotenv(candidate, override=True)
                 return
 
 
@@ -242,7 +242,15 @@ def _choose_filler(platform, page, profile, saved_answers, apply_url,
     Use the fast CSS-based filler for known platforms (Greenhouse, Lever).
     Fall back to Claude computer use for everything else.
     """
-    if USE_FAST_PATH and platform in ("greenhouse", "lever"):
+    # Only use the fast CSS filler when the URL is a standard platform board URL.
+    # Company-hosted embeds (e.g. stripe.com/jobs?gh_jid=...) have different DOM
+    # structures and will time out — fall back to computer use in those cases.
+    _FAST_PATH_DOMAINS = {
+        "greenhouse": ("boards.greenhouse.io", "job-boards.greenhouse.io"),
+        "lever":      ("jobs.lever.co",),
+    }
+    url_ok = any(d in apply_url for d in _FAST_PATH_DOMAINS.get(platform, ()))
+    if USE_FAST_PATH and platform in ("greenhouse", "lever") and url_ok:
         try:
             from app.agent.registry import get_filler
             return get_filler(
@@ -256,6 +264,8 @@ def _choose_filler(platform, page, profile, saved_answers, apply_url,
             )
         except Exception as exc:
             logger.warning("Fast-path filler init failed (%s), falling back to computer use: %s", platform, exc)
+    elif USE_FAST_PATH and platform in ("greenhouse", "lever") and not url_ok:
+        logger.info("  URL is not a standard %s board URL — skipping fast path, using computer use", platform)
 
     # Claude computer use — works on any ATS
     from app.agent.computer_use_filler import ComputerUseFiller

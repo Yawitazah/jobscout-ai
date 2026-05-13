@@ -23,6 +23,7 @@ dependencies = [
     "pypdf",
     "python-docx",
     "python-jose[cryptography]",
+    "python-dotenv",
     "python-multipart",
     "redis",
     "supabase",
