@@ -9,7 +9,11 @@ export default async function ProfilePage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, full_name, email, phone, location, summary, skills, experience, education")
+    .select(
+      "id, full_name, email, phone, location, summary, skills, experience, education, " +
+      "linkedin_url, github_url, portfolio_url, additional_context, " +
+      "certifications, projects, languages"
+    )
     .eq("id", user!.id)
     .single();
 
@@ -23,6 +27,13 @@ export default async function ProfilePage() {
     skills: [],
     experience: [],
     education: [],
+    linkedin_url: null,
+    github_url: null,
+    portfolio_url: null,
+    additional_context: null,
+    certifications: [],
+    projects: [],
+    languages: [],
   };
 
   // Fetch resume upload history
@@ -31,7 +42,21 @@ export default async function ProfilePage() {
     .select("id, created_at, status, original_filename, mime_type")
     .eq("user_id", user!.id)
     .order("created_at", { ascending: false })
-    .limit(10);
+    .limit(20);
 
-  return <ProfileEditor initial={initial} uploads={uploads ?? []} />;
+  // Fetch Scout memories
+  const { data: memories } = await supabase
+    .from("profile_memories")
+    .select("id, source, content, created_at")
+    .eq("user_id", user!.id)
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  return (
+    <ProfileEditor
+      initial={initial}
+      uploads={uploads ?? []}
+      initialMemories={memories ?? []}
+    />
+  );
 }

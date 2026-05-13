@@ -18,10 +18,10 @@ function getAdmin() {
 async function loadUserContext(userId: string): Promise<string> {
   const admin = getAdmin();
 
-  const [profileRes, prefsRes, resumeRes] = await Promise.all([
+  const [profileRes, prefsRes, resumeRes, memoriesRes] = await Promise.all([
     admin
       .from("profiles")
-      .select("full_name, email, phone, location, summary, skills, experience, education")
+      .select("full_name, email, phone, location, summary, skills, experience, education, certifications, projects, languages, linkedin_url, github_url, portfolio_url, additional_context")
       .eq("id", userId)
       .maybeSingle(),
     admin
@@ -37,11 +37,18 @@ async function loadUserContext(userId: string): Promise<string> {
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    admin
+      .from("profile_memories")
+      .select("content, source, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(30),
   ]);
 
   const profile = profileRes.data;
   const prefs = prefsRes.data;
   const resume = resumeRes.data;
+  const memories = memoriesRes.data ?? [];
 
   const lines: string[] = ["=== WHAT YOU KNOW ABOUT THIS USER ===", ""];
 
@@ -51,6 +58,9 @@ async function loadUserContext(userId: string): Promise<string> {
     if (profile.email) lines.push(`Email: ${profile.email}`);
     if (profile.location) lines.push(`Location: ${profile.location}`);
     if (profile.phone) lines.push(`Phone: ${profile.phone}`);
+    if (profile.linkedin_url) lines.push(`LinkedIn: ${profile.linkedin_url}`);
+    if (profile.github_url) lines.push(`GitHub: ${profile.github_url}`);
+    if (profile.portfolio_url) lines.push(`Portfolio: ${profile.portfolio_url}`);
     if (profile.summary) {
       lines.push("", `Professional Summary: ${profile.summary}`);
     }
@@ -74,9 +84,38 @@ async function loadUserContext(userId: string): Promise<string> {
       lines.push("", "Education:");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       for (const edu of profile.education as any[]) {
-        const range = [edu.start_date, edu.end_date ?? "Present"].filter(Boolean).join(" – ");
-        lines.push(`  - ${edu.degree ?? "Degree"} from ${edu.institution}${range ? ` (${range})` : ""}`);
+        lines.push(`  - ${edu.degree ?? "Degree"} from ${edu.institution}${edu.graduation_year ? ` (${edu.graduation_year})` : ""}`);
       }
+    }
+
+    // Certifications
+    if (Array.isArray(profile.certifications) && profile.certifications.length > 0) {
+      lines.push("", "Certifications:");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const c of profile.certifications as any[]) {
+        lines.push(`  - ${c.name}${c.issuer ? ` (${c.issuer})` : ""}${c.year ? ` ${c.year}` : ""}`);
+      }
+    }
+
+    // Projects
+    if (Array.isArray(profile.projects) && profile.projects.length > 0) {
+      lines.push("", "Projects:");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const p of profile.projects as any[]) {
+        lines.push(`  - ${p.name}: ${p.description ?? ""}${p.technologies?.length ? ` [${p.technologies.join(", ")}]` : ""}`);
+      }
+    }
+
+    // Languages
+    if (Array.isArray(profile.languages) && profile.languages.length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const langStr = (profile.languages as any[]).map((l) => `${l.language} (${l.proficiency})`).join(", ");
+      lines.push("", `Languages: ${langStr}`);
+    }
+
+    // Additional context (free-form notes)
+    if (profile.additional_context?.trim()) {
+      lines.push("", "Additional background (user's own words):", profile.additional_context.trim());
     }
   }
 
@@ -115,6 +154,14 @@ async function loadUserContext(userId: string): Promise<string> {
     if (resume.extracted_text.length > 3000) lines.push("[...truncated for brevity]");
   }
 
+  // Saved memories from Scout conversations
+  if (memories.length > 0) {
+    lines.push("", "Saved memories / facts about this user (from prior conversations):");
+    for (const m of memories) {
+      lines.push(`  • ${m.content}`);
+    }
+  }
+
   lines.push("", "=== END USER CONTEXT ===");
   return lines.join("\n");
 }
@@ -147,7 +194,10 @@ WHEN YOU DO SEARCH:
 UPDATING PREFERENCES:
 If the user asks to change or update their preferences, confirm what you heard, call update_preferences to save it, and confirm it's done.
 
-You remember everything from prior conversations. Reference it naturally. Be honest, direct, and genuinely helpful — like a recruiter who actually knows them.`;
+SAVING MEMORIES:
+Whenever the user shares a new fact about themselves — an achievement, a project, a preference, a career story — silently call save_profile_memory to preserve it. Do NOT ask for permission; save it in the background. Examples: "Built a team of 12 engineers at XYZ", "Managed a $2M budget", "Launched a product that hit 100k users in 3 months". These memories feed directly into resume generation, so capturing them is critical.
+
+You remember everything from prior conversations and saved memories above. Reference it naturally. Be honest, direct, and genuinely helpful — like a recruiter who actually knows them.`;
 }
 
 // ─── Tools ────────────────────────────────────────────────────────────────────
@@ -176,6 +226,21 @@ const ADD_JOBS_TOOL: Anthropic.Tool = {
       },
     },
     required: ["jobs"],
+  },
+};
+
+const SAVE_MEMORY_TOOL: Anthropic.Tool = {
+  name: "save_profile_memory",
+  description: "Save a fact, achievement, or piece of background the user just shared about themselves that isn't already in their profile. Use this proactively whenever the user reveals new information about their work history, skills, accomplishments, goals, or preferences that would help tailor their resume or job search. Only save genuinely new information — not things already captured in their profile.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      content: {
+        type: "string",
+        description: "The fact or memory to save, written as a clear, complete sentence from the user's perspective. E.g. 'Grew a newsletter from 0 to 50k subscribers while at Acme Corp.' or 'Prefers not to work at companies with fewer than 50 employees.'",
+      },
+    },
+    required: ["content"],
   },
 };
 
@@ -397,6 +462,7 @@ export async function POST(req: NextRequest, { params }: Params) {
             { type: "web_search_20250305", name: "web_search" },
             ADD_JOBS_TOOL,
             UPDATE_PREFERENCES_TOOL,
+            SAVE_MEMORY_TOOL,
           ];
 
           const apiStream = ai.messages.stream({
@@ -425,6 +491,8 @@ export async function POST(req: NextRequest, { params }: Params) {
                   send({ type: "status", text: "Saving matches to your queue..." });
                 } else if (event.content_block.name === "update_preferences") {
                   send({ type: "status", text: "Updating your preferences..." });
+                } else if (event.content_block.name === "save_profile_memory") {
+                  send({ type: "status", text: "Saving to your profile memory..." });
                 }
               }
             } else if (event.type === "content_block_delta") {
@@ -469,6 +537,15 @@ export async function POST(req: NextRequest, { params }: Params) {
             } else if (toolUse.name === "update_preferences") {
               send({ type: "status", text: "Updating your preferences..." });
               result = await handleUpdatePreferences(input, user.id);
+            } else if (toolUse.name === "save_profile_memory") {
+              const content = (input.content ?? "").trim();
+              if (content) {
+                await admin.from("profile_memories").insert({ user_id: user.id, content, source: "scout" });
+                result = `Memory saved.`;
+                send({ type: "status", text: `Saved to your profile: "${content}"` });
+              } else {
+                result = "No content to save.";
+              }
             } else if (toolUse.name === "web_search") {
               result = "Search completed.";
             }

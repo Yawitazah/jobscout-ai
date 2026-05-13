@@ -6,57 +6,54 @@ import re
 
 import anthropic
 
-# Clichés that make hiring managers cringe
 BANNED_WORDS: list[str] = [
-    "passionate",
-    "ninja",
-    "rockstar",
-    "guru",
-    "synergy",
-    "leverage",
-    "utilize",
-    "utilise",
-    "dynamic",
-    "innovative",
-    "thought leader",
-    "game changer",
-    "game-changer",
-    "disruptive",
-    "holistic",
-    "ecosystem",
-    "proactive",
-    "go-getter",
-    "self-starter",
-    "team player",
-    "detail-oriented",
-    "results-driven",
-    "hardworking",
-    "motivated",
-    "enthusiastic",
+    "passionate", "ninja", "rockstar", "guru", "synergy", "leverage", "utilize",
+    "utilise", "dynamic", "innovative", "thought leader", "game changer", "game-changer",
+    "disruptive", "holistic", "ecosystem", "proactive", "go-getter", "self-starter",
+    "team player", "detail-oriented", "results-driven", "hardworking", "motivated",
+    "enthusiastic", "seasoned professional", "proven track record",
 ]
 
 SYSTEM_PROMPT = """\
-You are an expert cover letter writer. Write a concise, compelling cover letter for the candidate
-targeting the specific job. The letter should be 3-4 short paragraphs:
-1. Opening: why this role, why this company (be specific, not generic).
-2. Proof: 2-3 concrete examples of relevant experience from the candidate's profile.
-3. Value add: what specific problem you'd solve or goal you'd advance.
-4. Close: confident call to action.
+You are a world-class cover letter writer. You write letters that get read because they are \
+specific, confident, and show real understanding of what the company needs.
 
-STRICT RULES:
-- Only reference skills, experience, and facts that appear in the source profile.
-- Do not invent metrics, titles, or achievements.
-- Maximum 350 words.
-- No greeting salutation (skip "Dear Hiring Manager").
-- No sign-off (skip "Sincerely, ...").
+STRUCTURE (4 tight paragraphs, ≤ 350 words total):
 
-Output JSON exactly:
+Paragraph 1 — HOOK (2-3 sentences)
+• Open with a specific insight about the company or role — something that shows you actually \
+  understand their business, product, challenge, or market.
+• State the role you're applying for.
+• One sentence why you are the right person (most relevant credential or achievement).
+
+Paragraph 2 — PROOF (3-4 sentences)
+• Pick the 2-3 most relevant achievements from the candidate's background.
+• Each achievement must be concrete: include a number, outcome, or named technology/brand where available.
+• Mirror the language and priorities of the job description.
+• If `additional_context` exists in the profile, mine it for your best proof points.
+
+Paragraph 3 — VALUE ADD (2-3 sentences)
+• Describe the specific problem you would solve or goal you would advance in this role.
+• Make it feel like you've already thought about how you'd succeed in their context.
+• Reference something specific about the company (product, growth stage, challenge, mission).
+
+Paragraph 4 — CLOSE (1-2 sentences)
+• Confident, forward-looking close. Express genuine interest.
+• No weak phrases like "I hope to hear from you" — use "I'd welcome the chance to discuss…"
+
+RULES:
+• No greeting salutation ("Dear Hiring Manager" etc.)
+• No sign-off ("Sincerely" etc.)
+• Only reference skills and experience traceable to the candidate's profile.
+• Never invent metrics, titles, or achievements.
+• The letter must feel hand-crafted for THIS company and THIS role — not a template.
+• Use the company name at least once by name.
+
+Output JSON exactly (no markdown, no commentary):
 {
-  "paragraphs": ["paragraph 1", "paragraph 2", "paragraph 3", "paragraph 4"],
-  "word_count": <int>
+  "paragraphs": ["paragraph 1 text", "paragraph 2 text", "paragraph 3 text", "paragraph 4 text"],
+  "word_count": <integer>
 }
-
-Return only valid JSON, no markdown, no commentary.
 """
 
 
@@ -66,13 +63,13 @@ def generate_cover_letter(profile: dict, job: dict) -> dict:
         f"TARGET JOB:\n"
         f"Title: {job.get('title', '')}\n"
         f"Company: {job.get('company_name', '')}\n"
-        f"Description:\n{(job.get('description') or '')[:6000]}"
+        f"Full job description:\n{(job.get('description') or '')[:8000]}"
     )
 
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     resp = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=1024,
+        model="claude-opus-4-5",   # Use Opus for highest quality cover letter
+        max_tokens=1500,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_msg}],
     )
@@ -88,7 +85,6 @@ def generate_cover_letter(profile: dict, job: dict) -> dict:
 
 
 def check_banned_words(paragraphs: list[str]) -> list[str]:
-    """Return list of banned words found across all paragraphs."""
     full_text = " ".join(paragraphs).lower()
     found: list[str] = []
     for word in BANNED_WORDS:
@@ -99,11 +95,15 @@ def check_banned_words(paragraphs: list[str]) -> list[str]:
 
 
 def _slim(profile: dict) -> dict:
-    return {
+    slim = {
         "full_name": profile.get("full_name"),
         "location": profile.get("location"),
         "summary": profile.get("summary"),
         "skills": profile.get("skills", []),
         "experience": profile.get("experience", []),
         "education": profile.get("education", []),
+        "certifications": profile.get("certifications", []),
+        "projects": profile.get("projects", []),
+        "additional_context": profile.get("additional_context") or "",
     }
+    return {k: v for k, v in slim.items() if v not in (None, [], "")}

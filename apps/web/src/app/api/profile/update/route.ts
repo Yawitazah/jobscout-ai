@@ -13,7 +13,13 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
 
-  const allowed = ["full_name", "phone", "location", "summary", "skills", "experience", "education"];
+  const allowed = [
+    "full_name", "phone", "location", "summary",
+    "skills", "experience", "education",
+    "certifications", "projects", "languages",
+    "linkedin_url", "github_url", "portfolio_url",
+    "additional_context",
+  ];
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   for (const key of allowed) {
     if (key in body) patch[key] = body[key];
