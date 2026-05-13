@@ -30,6 +30,7 @@ export async function GET(
       submitted_at,
       created_at,
       updated_at,
+      missing_questions,
       user_job:user_jobs (
         id,
         score,
