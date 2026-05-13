@@ -6,28 +6,51 @@ export async function POST(
   { params }: { params: Promise<{ user_job_id: string }> }
 ) {
   const supabase = await createClient();
+
+  // getUser() hits Supabase's auth server — always returns a fresh, valid token.
+  // getSession() can return a cached/expired token from cookies.
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Grab a fresh session so we have a valid access_token to forward
   const {
     data: { session },
-    error: authError,
   } = await supabase.auth.getSession();
-  if (authError || !session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  if (!session?.access_token) {
+    return NextResponse.json({ error: "No active session" }, { status: 401 });
   }
 
   const { user_job_id } = await params;
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
   if (!apiUrl) {
-    return NextResponse.json({ error: "API not configured" }, { status: 503 });
+    return NextResponse.json({ error: "API_URL not configured" }, { status: 503 });
   }
 
-  const res = await fetch(`${apiUrl}/applications/start/${user_job_id}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${session.access_token}`,
-      "Content-Type": "application/json",
-    },
-  });
+  const backendUrl = `${apiUrl}/applications/start/${user_job_id}`;
 
-  const body = await res.json();
+  let res: Response;
+  try {
+    res = await fetch(backendUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json",
+      },
+    });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: `Could not reach backend: ${err?.message ?? err}` },
+      { status: 502 }
+    );
+  }
+
+  const body = await res.json().catch(() => ({}));
   return NextResponse.json(body, { status: res.status });
 }

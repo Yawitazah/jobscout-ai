@@ -2,7 +2,6 @@ from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
 from supabase import Client
 
 from app.config import Settings, get_settings
@@ -15,27 +14,26 @@ def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, Any]:
+    """
+    Validate a Supabase user JWT by calling Supabase's own auth API.
+    This avoids needing SUPABASE_JWT_SECRET and handles key rotation automatically.
+    """
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise _unauthorized()
 
+    token = credentials.credentials
+    supabase = get_supabase_service_client(settings)
+
     try:
-        payload = jwt.decode(
-            credentials.credentials,
-            settings.supabase_jwt_secret,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
-    except JWTError as exc:
+        response = supabase.auth.get_user(token)
+        user = response.user
+        if not user:
+            raise _unauthorized()
+        return {"id": user.id, "email": user.email}
+    except HTTPException:
+        raise
+    except Exception as exc:
         raise _unauthorized() from exc
-
-    user_id = payload.get("sub")
-    if not user_id:
-        raise _unauthorized()
-
-    return {
-        "id": user_id,
-        "email": payload.get("email"),
-    }
 
 
 def get_service_or_user(
@@ -45,16 +43,16 @@ def get_service_or_user(
 ) -> dict[str, Any]:
     """
     Accepts either:
-    - A Supabase user JWT  → returns {"id": user_id, "email": ...}
-    - The Supabase service-role key (exact token match) for server-to-server calls.
-      Caller must also supply X-User-Id header with the target user's ID.
+    - A Supabase user JWT  → validates via auth.get_user(), returns {"id": ..., "email": ...}
+    - The service-role key → bypasses user auth for internal server-to-server calls.
+      Caller must also pass X-User-Id header with the target user UUID.
     """
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise _unauthorized()
 
     token = credentials.credentials
 
-    # 1. Service-role key: direct string comparison — no JWT decode needed
+    # Service-role key: direct string match — no JWT decode needed
     if token == settings.supabase_service_role_key:
         user_id = request.headers.get("X-User-Id")
         if not user_id:
@@ -64,22 +62,8 @@ def get_service_or_user(
             )
         return {"id": user_id, "service": True}
 
-    # 2. Regular user JWT
-    try:
-        payload = jwt.decode(
-            token,
-            settings.supabase_jwt_secret,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
-    except JWTError as exc:
-        raise _unauthorized() from exc
-
-    user_id = payload.get("sub")
-    if not user_id:
-        raise _unauthorized()
-
-    return {"id": user_id, "email": payload.get("email")}
+    # Regular user JWT — delegate to Supabase
+    return get_current_user(credentials, settings)
 
 
 def get_supabase_admin(
