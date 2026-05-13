@@ -56,16 +56,18 @@ def score_job_for_user(self, user_id: str, job_id: str):
     try:
         supabase = _get_supabase()
 
-        # Skip if already scored
+        # Check if a row already exists (may be a preliminary placeholder)
         existing = (
             supabase.table("user_jobs")
-            .select("id")
+            .select("id, status, decision_source")
             .eq("user_id", user_id)
             .eq("job_id", job_id)
+            .maybe_single()
             .execute()
         )
-        if existing.data:
-            return {"status": "skipped", "reason": "already_scored"}
+        # Skip only if user has already made a manual decision on this job
+        if existing.data and existing.data.get("decision_source") == "manual":
+            return {"status": "skipped", "reason": "manual_decision"}
 
         profile = fetch_profile(supabase, user_id)
         preferences = fetch_preferences(supabase, user_id)
@@ -110,7 +112,9 @@ def score_job_for_user(self, user_id: str, job_id: str):
                 row["status"] = "approved"
                 row["decision_source"] = "auto"
 
-        supabase.table("user_jobs").insert(row).execute()
+        supabase.table("user_jobs").upsert(
+            row, on_conflict="user_id,job_id"
+        ).execute()
         return {"status": "scored", "score": score_val}
 
     except Exception as exc:

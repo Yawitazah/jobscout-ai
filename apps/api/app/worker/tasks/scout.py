@@ -105,6 +105,32 @@ def scout_for_user(self, user_id: str):
             except Exception as exc:
                 logger.warning(f"Failed to upsert job {normalized.source_id}: {exc}")
 
+        # Pre-populate user_jobs immediately so jobs appear in the queue right away.
+        # The score_job_for_user task will update these rows with real AI scores.
+        if job_ids:
+            preliminary_rows = [
+                {
+                    "user_id": user_id,
+                    "job_id": job_id,
+                    "score": 50,
+                    "status": "pending",
+                    "decision_source": None,
+                    "match_reasons": [],
+                    "deal_breakers_hit": [],
+                }
+                for job_id in job_ids
+            ]
+            try:
+                # ignore_duplicates=True preserves existing rows that have real AI scores
+                supabase.table("user_jobs").upsert(
+                    preliminary_rows,
+                    on_conflict="user_id,job_id",
+                    ignore_duplicates=True,
+                ).execute()
+                logger.info(f"Pre-inserted {len(preliminary_rows)} user_jobs for user {user_id}")
+            except Exception as exc:
+                logger.warning(f"Failed to pre-insert user_jobs: {exc}")
+
         for job_id in job_ids:
             score_job_for_user.delay(user_id, job_id)
 
