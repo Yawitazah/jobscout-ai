@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
@@ -132,17 +133,21 @@ CORE RULES — NEVER BREAK THESE:
 - When you reference past preferences or profile details, do it naturally — "Based on your background in..." or "Since you prefer remote roles..."
 - Today's date: ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}.
 
-YOUR JOB SEARCH PROCESS:
-1. Understand any refinements or new direction from the user — but do NOT ask for info you already know from their profile.
-2. When you have enough to search, confirm briefly: "I'll search for [criteria]. Starting now."
-3. Use web_search to find real, current job openings. Run multiple searches with different phrasings and job boards (LinkedIn, Indeed, Glassdoor, company career pages).
-4. Use add_jobs_to_queue to save strong matches. Be selective — only roles that genuinely fit this user's background and preferences.
-5. After adding jobs, tell the user: how many you added, your top pick and why it stands out, and what you're continuing to explore.
+HOW TO BEHAVE:
+- Always have a conversation first. When someone asks a vague question like "What's my best match?" or "What should I be applying to?", do NOT immediately search. Instead, give them your honest take based on their profile, then ask a specific question to refine, then confirm before searching.
+- Never use web_search unless the user has explicitly said to search: "go ahead", "yes", "search now", "find me jobs", "start searching", or similar. A question alone is not permission to search.
+- After your analysis, close with something like: "Want me to run a search based on this? I can start right now." Then wait.
+- When the user does give the go-ahead, say what you'll search for in one sentence, then immediately begin.
+
+WHEN YOU DO SEARCH:
+- Use web_search to find real, current job openings. Search multiple times with different phrasings and job boards (LinkedIn, Indeed, Glassdoor, company career pages).
+- Use add_jobs_to_queue to save quality matches. Be very selective — only add roles that genuinely fit this person's background and stated preferences.
+- After adding jobs: tell the user how many you added, name the top pick and explain why in 1-2 sentences, then say what else you're looking at.
 
 UPDATING PREFERENCES:
-If the user asks to change or update their search preferences, confirm what they want to change, then call update_preferences to save it. Say something like "Got it, I've updated your preferences to reflect that."
+If the user asks to change or update their preferences, confirm what you heard, call update_preferences to save it, and confirm it's done.
 
-You remember everything from prior conversations. Reference past context naturally. Be their best recruiter.`;
+You remember everything from prior conversations. Reference it naturally. Be honest, direct, and genuinely helpful — like a recruiter who actually knows them.`;
 }
 
 // ─── Tools ────────────────────────────────────────────────────────────────────
@@ -232,17 +237,24 @@ async function handleAddJobs(
 
       const companyId = companyData?.id ?? null;
 
-      const { data: jobData } = await admin
+      const sourceId = `scout:${Buffer.from(job.url).toString("base64").slice(0, 40)}`;
+      const description = `${job.description}\n\nWhy this matches you: ${job.why_good_match}`;
+      const dedupeHash = createHash("sha1")
+        .update(`${job.title}|${job.company}|${description.slice(0, 200)}`)
+        .digest("hex");
+
+      const { data: jobData, error: jobError } = await admin
         .from("jobs")
         .upsert(
           {
             company_id: companyId,
             source_platform: "scout",
-            source_id: `scout:${Buffer.from(job.url).toString("base64").slice(0, 40)}`,
+            source_id: sourceId,
             source_url: job.url,
             title: job.title,
             location: job.location,
-            description: `${job.description}\n\nWhy this matches you: ${job.why_good_match}`,
+            description,
+            dedupe_hash: dedupeHash,
             is_active: true,
             last_seen_at: new Date().toISOString(),
           },
@@ -251,7 +263,10 @@ async function handleAddJobs(
         .select("id")
         .single();
 
-      if (!jobData?.id) continue;
+      if (jobError || !jobData?.id) {
+        console.error("Job upsert failed:", jobError?.message, job.title);
+        continue;
+      }
 
       const { data: existing } = await admin
         .from("user_jobs")
@@ -261,17 +276,21 @@ async function handleAddJobs(
         .maybeSingle();
 
       if (!existing) {
-        await admin.from("user_jobs").insert({
+        const { error: ujError } = await admin.from("user_jobs").insert({
           user_id: userId,
           job_id: jobData.id,
           status: "pending",
           score: 80,
-          decision_source: "scout",
+          decision_source: "auto",
         });
-        added++;
+        if (ujError) {
+          console.error("user_jobs insert failed:", ujError.message, job.title);
+        } else {
+          added++;
+        }
       }
-    } catch {
-      // skip individual failures
+    } catch (err) {
+      console.error("handleAddJobs error:", err instanceof Error ? err.message : err);
     }
   }
 
@@ -399,6 +418,14 @@ export async function POST(req: NextRequest, { params }: Params) {
                 contentBlocks.push({ type: "text", text: "" });
               } else if (event.content_block.type === "tool_use") {
                 contentBlocks.push({ ...event.content_block, input: {} });
+                // Immediately notify the user so the cursor doesn't blankly blink
+                if (event.content_block.name === "web_search") {
+                  send({ type: "status", text: "Searching the web for job listings..." });
+                } else if (event.content_block.name === "add_jobs_to_queue") {
+                  send({ type: "status", text: "Saving matches to your queue..." });
+                } else if (event.content_block.name === "update_preferences") {
+                  send({ type: "status", text: "Updating your preferences..." });
+                }
               }
             } else if (event.type === "content_block_delta") {
               const block = contentBlocks[event.index];

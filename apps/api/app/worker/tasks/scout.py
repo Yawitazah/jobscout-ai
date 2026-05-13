@@ -69,10 +69,10 @@ def scout_for_user(self, user_id: str):
 
     try:
         profile = fetch_profile(supabase, user_id)
-        preferences = fetch_preferences(supabase, user_id)
+        preferences = fetch_preferences(supabase, user_id) or {}
 
-        if not profile or not preferences:
-            raise ValueError("User missing profile or preferences")
+        if not profile:
+            raise ValueError("User missing profile")
 
         async def fetch_all():
             results = []
@@ -137,11 +137,17 @@ def _pre_filter(job, preferences: dict) -> bool:
     if not target_titles:
         return True
 
+    # Build keyword set — keep all meaningful words including short ones like
+    # "SWE", "iOS", "QA", "ML", "VP", "PM". Only drop true stop words.
+    _stop = {"and", "the", "for", "with", "a", "an", "of", "in", "at", "to"}
     keywords: set[str] = set()
     for t in target_titles:
         for word in t.split():
-            if len(word) > 3 and word not in ("and", "the", "for", "with"):
+            if word not in _stop:
                 keywords.add(word)
+
+    if not keywords:
+        return True  # no filterable keywords → let everything through
 
     title_lower = (job.title if isinstance(job, NormalizedJob) else job.get("title", "")).lower()
     return any(kw in title_lower for kw in keywords)
