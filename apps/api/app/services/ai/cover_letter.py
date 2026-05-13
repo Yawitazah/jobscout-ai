@@ -68,7 +68,7 @@ def generate_cover_letter(profile: dict, job: dict) -> dict:
 
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     resp = client.messages.create(
-        model="claude-opus-4-5",   # Use Opus for highest quality cover letter
+        model="claude-sonnet-4-6",  # Sonnet: same quality, ~5x cheaper than Opus
         max_tokens=1500,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_msg}],

@@ -196,7 +196,7 @@ class ComputerUseFiller:
         for iteration in range(MAX_ITERATIONS):
             try:
                 response = client.beta.messages.create(
-                    model="claude-opus-4-5",
+                    model="claude-sonnet-4-5",
                     max_tokens=4096,
                     system=system_prompt,
                     tools=tools,
