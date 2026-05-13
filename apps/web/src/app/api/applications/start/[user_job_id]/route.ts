@@ -28,7 +28,7 @@ export async function POST(
   }
 
   const { user_job_id } = await params;
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  const apiUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL;
   if (!apiUrl) {
     return NextResponse.json({ error: "API_URL not configured" }, { status: 503 });
   }

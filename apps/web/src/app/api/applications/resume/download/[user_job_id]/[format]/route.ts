@@ -21,7 +21,8 @@ export async function GET(
     return NextResponse.json({ error: "Invalid format" }, { status: 400 });
   }
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  // API_URL is preferred (server-only var); fall back to NEXT_PUBLIC_API_URL
+  const apiUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL;
   if (!apiUrl) {
     return NextResponse.json({ error: "API_URL not configured" }, { status: 503 });
   }

@@ -46,7 +46,7 @@ export async function POST(
 
   // Kick off the application pipeline when a job is approved (fire-and-forget)
   if (decision === "approve") {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+    const apiUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL;
     if (apiUrl) {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
