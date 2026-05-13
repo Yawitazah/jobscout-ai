@@ -141,7 +141,12 @@ export default function ApplicationDetailPage({
     if (!app?.user_job?.id) return;
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/applications/start/${app.user_job.id}`, { method: "POST" });
+      // If docs already exist, just reset to ready_to_submit — no need to re-generate
+      const hasDocs = !!(app.resume || app.cover_letter);
+      const url = (app.status === "submit_failed" && hasDocs)
+        ? `/api/applications/retry/${app.id}`
+        : `/api/applications/start/${app.user_job.id}`;
+      const res = await fetch(url, { method: "POST" });
       const data = await res.json();
       if (data.status) {
         setApp((prev) => prev ? { ...prev, status: data.status } : prev);
@@ -231,7 +236,7 @@ export default function ApplicationDetailPage({
               className="flex items-center gap-1.5 text-xs font-medium text-white bg-[#1A2B4C] px-3 py-1.5 rounded-[6px] hover:bg-[#243660] disabled:opacity-60"
             >
               {submitting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-              {submitting ? "Starting…" : "Start Pipeline"}
+              {submitting ? "Starting…" : (app.status === "submit_failed" && hasDocs) ? "Retry Submission" : "Start Pipeline"}
             </button>
           )}
           {/* More info needed — open Scout to provide details */}

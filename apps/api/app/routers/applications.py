@@ -90,6 +90,34 @@ async def start_application(
     return StartApplicationResponse(application_id=application_id, status="tailoring_resume")
 
 
+@router.post("/retry/{application_id}", response_model=StartApplicationResponse)
+async def retry_submission(
+    application_id: str,
+    user: Annotated[dict[str, Any], Depends(get_current_user)],
+    supabase: Annotated[Client, Depends(get_supabase_admin)],
+) -> StartApplicationResponse:
+    """Reset a failed application to ready_to_submit so the local agent picks it up.
+    Does NOT regenerate resume or cover letter — existing docs are kept."""
+    app_row = (
+        supabase.table("applications")
+        .select("id, status, user_id")
+        .eq("id", application_id)
+        .eq("user_id", user["id"])
+        .single()
+        .execute()
+    )
+    if not app_row.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    now = datetime.now(timezone.utc).isoformat()
+    supabase.table("applications").update({
+        "status": "ready_to_submit",
+        "updated_at": now,
+    }).eq("id", application_id).execute()
+
+    return StartApplicationResponse(application_id=application_id, status="ready_to_submit")
+
+
 class TailorResponse(BaseModel):
     document_id: str
     verification_status: str
