@@ -102,8 +102,9 @@ def _prepare(application_id: str, user_id: str) -> None:
     # 2. Tailor resume (if not already done)
     # ------------------------------------------------------------------ #
     resume_doc_id = app.get("resume_doc_id")
+    has_profile_data = bool(profile.get("experience") or profile.get("skills"))
 
-    if not resume_doc_id and (profile.get("experience") or profile.get("skills")):
+    if not resume_doc_id and has_profile_data:
         _set_status(supabase, application_id, "tailoring_resume")
         try:
             from app.services.ai.resume_tailor import tailor_resume
@@ -145,14 +146,19 @@ def _prepare(application_id: str, user_id: str) -> None:
             }).eq("id", application_id).execute()
             logger.info("Auto-generated resume %s for application %s", resume_doc_id, application_id)
         except Exception as exc:
-            logger.warning("Resume tailoring failed, continuing: %s", exc)
+            logger.warning("Resume tailoring failed: %s", exc)
+            _mark_failed(
+                supabase, application_id,
+                f"Resume generation failed: {exc}. Add API credits then click 'Regenerate Docs'."
+            )
+            return
 
     # ------------------------------------------------------------------ #
     # 3. Generate cover letter (if not already done)
     # ------------------------------------------------------------------ #
     cover_letter_doc_id = app.get("cover_letter_doc_id")
 
-    if not cover_letter_doc_id and (profile.get("experience") or profile.get("skills")):
+    if not cover_letter_doc_id and has_profile_data:
         _set_status(supabase, application_id, "writing_cover_letter")
         try:
             from app.services.ai.cover_letter import generate_cover_letter
@@ -189,7 +195,8 @@ def _prepare(application_id: str, user_id: str) -> None:
             }).eq("id", application_id).execute()
             logger.info("Auto-generated cover letter %s for application %s", cover_letter_doc_id, application_id)
         except Exception as exc:
-            logger.warning("Cover letter generation failed, continuing: %s", exc)
+            # Cover letter failure is non-fatal — we can still submit with just the resume
+            logger.warning("Cover letter generation failed (will continue without): %s", exc)
 
     # ------------------------------------------------------------------ #
     # 4. Hand off to local agent

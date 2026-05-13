@@ -97,6 +97,12 @@ async def process_application(supabase, app: dict) -> None:
     user_job_id = app.get("user_job_id")
 
     logger.info("─── Processing application %s ───", app_id)
+
+    # Guard: don't submit without a resume doc — something went wrong upstream
+    if not app.get("resume_doc_id"):
+        logger.warning("  Skipping %s — no resume_doc_id (docs may not have been generated yet)", app_id)
+        return
+
     _set_status(supabase, app_id, "submitting")
 
     # ── Fetch job ──

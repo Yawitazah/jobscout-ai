@@ -227,7 +227,7 @@ export default function SavedPage() {
                   Approve &amp; Apply
                 </button>
 
-                {/* View original */}
+                {/* View original listing */}
                 <a
                   href={job.source_url}
                   target="_blank"
@@ -236,17 +236,6 @@ export default function SavedPage() {
                 >
                   <ExternalLink size={11} />
                   View Listing
-                </a>
-
-                {/* View & manually apply */}
-                <a
-                  href={job.source_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1.5 text-xs font-medium text-[#1A2B4C] border border-[#1A2B4C] px-3 py-2 rounded-lg hover:bg-[#1A2B4C] hover:text-white transition-colors"
-                >
-                  <ExternalLink size={11} />
-                  View &amp; Manually Apply
                 </a>
 
                 {/* Remove */}
