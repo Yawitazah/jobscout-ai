@@ -75,7 +75,7 @@ export default function ApplicationDetailPage({
   const [tab, setTab] = useState<Tab>("resume");
   const [submitting, setSubmitting] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
-  const [showAgentCmd, setShowAgentCmd] = useState(false);
+  const [agentQueued, setAgentQueued] = useState(false);
 
   useEffect(() => {
     fetch(`/api/applications/${id}`)
@@ -165,6 +165,13 @@ export default function ApplicationDetailPage({
     }
   }
 
+  // Clear the agentQueued flag once the runner picks it up (status moves on)
+  useEffect(() => {
+    if (agentQueued && app?.status && app.status !== "ready_to_submit") {
+      setAgentQueued(false);
+    }
+  }, [app?.status, agentQueued]);
+
   const inProgress = ["tailoring_resume", "writing_cover_letter", "submitting"].includes(app?.status ?? "");
   const hasDocs = !!(app?.resume || app?.cover_letter);
 
@@ -237,13 +244,16 @@ export default function ApplicationDetailPage({
               Provide Details
             </Link>
           )}
-          {/* Docs ready — show local agent command */}
+          {/* Docs ready — trigger local agent */}
           {app.status === "ready_to_submit" && hasDocs && (
             <button
-              onClick={() => setShowAgentCmd((v) => !v)}
-              className="text-xs text-blue-600 font-medium hover:underline"
+              onClick={() => setAgentQueued(true)}
+              disabled={agentQueued}
+              className="flex items-center gap-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 px-3 py-1.5 rounded-[6px]"
             >
-              Run local agent to submit {showAgentCmd ? "▲" : "▼"}
+              {agentQueued
+                ? <><Loader2 size={12} className="animate-spin" /> Agent picking up…</>
+                : <><Send size={12} /> Submit with Local Agent</>}
             </button>
           )}
           {app.status === "submitted" && app.confirmation_number && (
@@ -277,42 +287,14 @@ export default function ApplicationDetailPage({
         </div>
       )}
 
-      {/* Local agent panel */}
-      {showAgentCmd && app.status === "ready_to_submit" && hasDocs && (
-        <div className="bg-slate-900 text-slate-100 rounded-xl p-4 space-y-3 text-xs">
-          <p className="text-slate-400 font-sans font-semibold text-[11px] uppercase tracking-wider">Run the local agent on your machine</p>
-          <p className="text-slate-300 font-sans">The agent opens a real browser on <em>your computer</em> and submits the application using Claude. It does not run in the cloud.</p>
-
-          <div className="space-y-1">
-            <p className="text-slate-500 font-sans text-[11px] uppercase tracking-wider">1 · One-time setup</p>
-            <div className="bg-slate-800 rounded-lg px-3 py-2 font-mono text-green-400 leading-relaxed">
-              <div>cd apps/api</div>
-              <div>pip install -e ".[dev]"</div>
-              <div>playwright install chromium</div>
-            </div>
+      {/* Local agent queued notice */}
+      {agentQueued && app.status === "ready_to_submit" && (
+        <div className="flex items-start gap-3 border border-blue-100 bg-blue-50 rounded-xl px-4 py-3">
+          <Loader2 size={15} className="animate-spin text-blue-500 mt-0.5 flex-shrink-0" />
+          <div className="text-sm text-blue-800 space-y-0.5">
+            <p className="font-medium">Local agent queued</p>
+            <p className="text-xs text-blue-600">Your local agent will open a browser and submit this application within 30 seconds. The status will update here automatically.</p>
           </div>
-
-          <div className="space-y-1">
-            <p className="text-slate-500 font-sans text-[11px] uppercase tracking-wider">2 · Download your config (one time)</p>
-            <a
-              href="/api/agent/download-config"
-              download="jobscout-agent.env"
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-sans font-medium px-3 py-2 rounded-lg w-fit transition-colors"
-            >
-              <Download size={12} />
-              Download jobscout-agent.env
-            </a>
-            <p className="text-slate-500 font-sans text-[11px]">Save it inside <span className="text-slate-300 font-mono">apps/api/</span>. All keys are pre-filled — no copy-pasting.</p>
-          </div>
-
-          <div className="space-y-1">
-            <p className="text-slate-500 font-sans text-[11px] uppercase tracking-wider">3 · Run</p>
-            <div className="bg-slate-800 rounded-lg px-3 py-2 font-mono text-green-400 select-all">
-              python -m app.agent.local_runner
-            </div>
-          </div>
-
-          <p className="text-slate-500 font-sans text-[11px]">The agent polls every 30 s for applications with status <span className="text-slate-300">ready_to_submit</span>, then opens a browser window and fills the form. Leave it running while you have pending applications.</p>
         </div>
       )}
 
