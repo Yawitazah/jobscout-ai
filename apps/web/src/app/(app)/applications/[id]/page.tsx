@@ -172,15 +172,16 @@ export default function ApplicationDetailPage({
           {meta.label}
         </div>
         <div className="flex items-center gap-2">
-          {/* Regenerate docs when ready but no docs generated (e.g. API credits were missing) */}
-          {app.status === "ready_to_submit" && !hasDocs && (
+          {/* Regenerate — show for ready_to_submit (with or without docs) and after submission */}
+          {(app.status === "ready_to_submit" || app.status === "submitted") && (
             <button
               onClick={triggerRegenerate}
-              disabled={regenerating}
-              className="flex items-center gap-1.5 text-xs font-medium border border-[#1A2B4C] text-[#1A2B4C] px-3 py-1.5 rounded-[6px] hover:bg-blue-50 disabled:opacity-60"
+              disabled={regenerating || inProgress}
+              title="Re-run AI to generate a new resume & cover letter"
+              className="flex items-center gap-1.5 text-xs font-medium border border-gray-300 text-gray-600 px-3 py-1.5 rounded-[6px] hover:bg-gray-50 disabled:opacity-60"
             >
               {regenerating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-              {regenerating ? "Generating…" : "Regenerate Docs"}
+              {regenerating ? "Regenerating…" : "Regenerate docs"}
             </button>
           )}
           {/* Submit / retry pipeline */}
@@ -277,22 +278,33 @@ function ResumeTab({ app, onRegenerate }: { app: ApplicationDetail; onRegenerate
              resume.verification_status === "failed_review" ? "Needs review" : "Pending"}
           </span>
         </div>
-        {userJobId && (
-          <div className="flex gap-2">
-            <a
-              href={`${process.env.NEXT_PUBLIC_API_URL}/applications/${userJobId}/resume/download/docx`}
+        <div className="flex gap-2 flex-wrap">
+          {onRegenerate && (
+            <button
+              onClick={onRegenerate}
               className="flex items-center gap-1 text-xs text-gray-500 border border-gray-200 px-2.5 py-1.5 rounded-[6px] hover:bg-gray-50"
+              title="Re-run AI to get a fresh resume tailored to this job"
             >
-              <Download size={11} /> DOCX
-            </a>
-            <a
-              href={`${process.env.NEXT_PUBLIC_API_URL}/applications/${userJobId}/resume/download/pdf`}
-              className="flex items-center gap-1 text-xs text-gray-500 border border-gray-200 px-2.5 py-1.5 rounded-[6px] hover:bg-gray-50"
-            >
-              <Download size={11} /> PDF
-            </a>
-          </div>
-        )}
+              <RefreshCw size={11} /> Regenerate
+            </button>
+          )}
+          {userJobId && (
+            <>
+              <a
+                href={`${process.env.NEXT_PUBLIC_API_URL}/applications/${userJobId}/resume/download/docx`}
+                className="flex items-center gap-1 text-xs text-gray-500 border border-gray-200 px-2.5 py-1.5 rounded-[6px] hover:bg-gray-50"
+              >
+                <Download size={11} /> DOCX
+              </a>
+              <a
+                href={`${process.env.NEXT_PUBLIC_API_URL}/applications/${userJobId}/resume/download/pdf`}
+                className="flex items-center gap-1 text-xs text-gray-500 border border-gray-200 px-2.5 py-1.5 rounded-[6px] hover:bg-gray-50"
+              >
+                <Download size={11} /> PDF
+              </a>
+            </>
+          )}
+        </div>
       </div>
 
       {resume.verification_notes.length > 0 && (
@@ -346,10 +358,21 @@ function CoverLetterTab({ app, onRegenerate }: { app: ApplicationDetail; onRegen
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3 text-xs text-gray-400">
-        <span>{cl.content_json?.word_count ?? 0} words</span>
-        {banned.length > 0 && (
-          <span className="text-amber-600">Flagged: {banned.join(", ")}</span>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3 text-xs text-gray-400">
+          <span>{cl.content_json?.word_count ?? 0} words</span>
+          {banned.length > 0 && (
+            <span className="text-amber-600">Flagged: {banned.join(", ")}</span>
+          )}
+        </div>
+        {onRegenerate && (
+          <button
+            onClick={onRegenerate}
+            className="flex items-center gap-1 text-xs text-gray-500 border border-gray-200 px-2.5 py-1.5 rounded-[6px] hover:bg-gray-50"
+            title="Re-run AI to write a fresh cover letter"
+          >
+            <RefreshCw size={11} /> Regenerate
+          </button>
         )}
       </div>
       <div className="space-y-3">

@@ -383,6 +383,10 @@ export function ProfileEditor({ initial, uploads = [], initialMemories = [] }: P
   // Memories tab state
   const [memories, setMemories] = useState<Memory[]>(initialMemories);
   const [deletingMemoryId, setDeletingMemoryId] = useState<string | null>(null);
+  const [newMemoryText, setNewMemoryText] = useState("");
+  const [savingMemory, setSavingMemory] = useState(false);
+  const [extractingPdf, setExtractingPdf] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
 
   // ── Profile helpers ──────────────────────────────────────────────────────
 
@@ -527,6 +531,55 @@ export function ProfileEditor({ initial, uploads = [], initialMemories = [] }: P
       if (res.ok) setMemories((prev) => prev.filter((m) => m.id !== id));
     } finally {
       setDeletingMemoryId(null);
+    }
+  }
+
+  async function handleAddMemory() {
+    if (!newMemoryText.trim()) return;
+    setSavingMemory(true);
+    try {
+      const res = await fetch("/api/profile/memories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: newMemoryText.trim(), source: "manual" }),
+      });
+      const data = await res.json();
+      if (res.ok && data.id) {
+        const newMem: Memory = {
+          id: data.id,
+          source: "manual",
+          content: newMemoryText.trim(),
+          created_at: new Date().toISOString(),
+        };
+        setMemories((prev) => [newMem, ...prev]);
+        setNewMemoryText("");
+      }
+    } finally {
+      setSavingMemory(false);
+    }
+  }
+
+  async function handleMemoryPdfUploaded(uploadId: string) {
+    setExtractingPdf(true);
+    setExtractError(null);
+    try {
+      const res = await fetch("/api/profile/memories/from-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ upload_id: uploadId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.memories?.length) {
+        setMemories((prev) => [...(data.memories as Memory[]), ...prev]);
+      } else if (!res.ok) {
+        setExtractError(data.error ?? "Failed to extract memories from PDF");
+      } else {
+        setExtractError("No facts could be extracted from this document.");
+      }
+    } catch {
+      setExtractError("Network error — could not process PDF.");
+    } finally {
+      setExtractingPdf(false);
     }
   }
 
@@ -868,65 +921,125 @@ export function ProfileEditor({ initial, uploads = [], initialMemories = [] }: P
 
       {/* ── MEMORIES TAB ─────────────────────────────────────────────────────── */}
       {tab === "memories" && (
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-600">
             <p className="font-medium text-gray-700 mb-1">What are memories?</p>
             <p className="text-xs">
-              When you tell Scout things about your work history, achievements, or goals, it automatically saves
-              them here. These facts are fed into every resume and cover letter to make them more personal and accurate.
-              Delete any that are outdated or incorrect.
+              Facts about your career that get fed into every resume and cover letter. Scout saves them automatically
+              when you chat. You can also add them manually or upload a PDF to extract facts from it.
             </p>
           </div>
 
-          {memories.length === 0 ? (
-            <div className="text-center py-12">
-              <svg className="mx-auto h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-              </svg>
-              <p className="mt-3 text-sm text-gray-500">No memories yet.</p>
-              <p className="text-xs text-gray-400 mt-1">
-                Chat with Scout and tell it about your career — it will save the important details here.
-              </p>
+          {/* Manual add */}
+          <section className="space-y-2">
+            <SectionHeader title="Add a memory" />
+            <div className="flex gap-2">
+              <Textarea
+                value={newMemoryText}
+                onChange={(e) => setNewMemoryText(e.target.value)}
+                rows={2}
+                placeholder="e.g. Led a team of 8 engineers at Acme Corp, shipped payments feature generating $2M in Q1 2024"
+              />
             </div>
-          ) : (
-            <div className="space-y-2">
-              {memories.map((m) => (
-                <div
-                  key={m.id}
-                  className="flex items-start gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 group"
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800">{m.content}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs text-gray-400">{formatDate(m.created_at)}</span>
-                      {m.source && m.source !== "scout" && (
-                        <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{m.source}</span>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleDeleteMemory(m.id)}
-                    disabled={deletingMemoryId === m.id}
-                    className="shrink-0 p-1 text-gray-300 hover:text-red-500 transition-colors disabled:opacity-40 opacity-0 group-hover:opacity-100"
-                    title="Delete memory"
+            <button
+              onClick={handleAddMemory}
+              disabled={savingMemory || !newMemoryText.trim()}
+              className="flex items-center gap-1.5 text-xs font-medium bg-[#1A2B4C] text-white px-3 py-1.5 rounded-[6px] hover:bg-[#243d6b] disabled:opacity-50"
+            >
+              {savingMemory ? (
+                <>
+                  <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  Saving…
+                </>
+              ) : "Add memory"}
+            </button>
+          </section>
+
+          {/* PDF upload → extract memories */}
+          <section className="space-y-3">
+            <SectionHeader title="Extract from a PDF" />
+            <p className="text-xs text-gray-500">
+              Upload any PDF about yourself — a bio, portfolio, awards, project summary, anything. The AI will extract
+              key career facts and save them as memories.
+            </p>
+            {extractError && (
+              <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+                {extractError}
+              </div>
+            )}
+            {extractingPdf ? (
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                <svg className="animate-spin h-4 w-4 text-[#1A2B4C]" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                Extracting facts from PDF…
+              </div>
+            ) : (
+              <ResumeUpload onSuccess={(uploadId) => handleMemoryPdfUploaded(uploadId)} />
+            )}
+          </section>
+
+          {/* Memory list */}
+          <section className="space-y-3">
+            {memories.length > 0 && (
+              <SectionHeader title={`Saved memories (${memories.length})`} />
+            )}
+            {memories.length === 0 ? (
+              <div className="text-center py-8">
+                <svg className="mx-auto h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+                <p className="mt-3 text-sm text-gray-500">No memories yet.</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Add one above, upload a PDF, or chat with Scout about your career.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {memories.map((m) => (
+                  <div
+                    key={m.id}
+                    className="flex items-start gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 group"
                   >
-                    {deletingMemoryId === m.id ? (
-                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                      </svg>
-                    ) : (
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-800">{m.content}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-xs text-gray-400">{formatDate(m.created_at)}</span>
+                        {m.source && m.source !== "scout" && (
+                          <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded capitalize">
+                            {m.source.startsWith("pdf:") ? `📄 ${m.source.slice(4)}` : m.source}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteMemory(m.id)}
+                      disabled={deletingMemoryId === m.id}
+                      className="shrink-0 p-1 text-gray-300 hover:text-red-500 transition-colors disabled:opacity-40 opacity-0 group-hover:opacity-100"
+                      title="Delete memory"
+                    >
+                      {deletingMemoryId === m.id ? (
+                        <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                        </svg>
+                      ) : (
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
       )}
     </div>

@@ -303,17 +303,47 @@ export default function ApplicationsPage() {
                     </button>
                   )}
 
-                  {/* Regenerate docs when ready_to_submit but no docs yet */}
+                  {/* Generate docs when ready_to_submit but nothing generated yet */}
                   {status === "ready_to_submit" && !hasResume && !hasCoverLetter && (
                     <button
                       onClick={() => startApplication(item.user_job_id)}
                       disabled={starting === item.user_job_id}
-                      className="flex items-center gap-1.5 text-xs font-medium border border-[#1A2B4C] text-[#1A2B4C] px-3 py-1.5 rounded-lg hover:bg-blue-50 disabled:opacity-60 transition-colors"
+                      className="flex items-center gap-1.5 text-xs font-medium bg-[#1A2B4C] text-white px-3 py-1.5 rounded-lg hover:bg-[#243b63] disabled:opacity-60 transition-colors"
                     >
                       {starting === item.user_job_id ? (
                         <><Loader2 size={11} className="animate-spin" /> Generating…</>
                       ) : (
-                        <><RefreshCw size={11} /> Regenerate Docs</>
+                        <><RefreshCw size={11} /> Generate Docs</>
+                      )}
+                    </button>
+                  )}
+
+                  {/* Regenerate — docs already exist but user wants a fresh version */}
+                  {(status === "ready_to_submit" && (hasResume || hasCoverLetter)) && (
+                    <button
+                      onClick={() => startApplication(item.user_job_id)}
+                      disabled={starting === item.user_job_id}
+                      className="flex items-center gap-1.5 text-xs font-medium border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50 disabled:opacity-60 transition-colors"
+                    >
+                      {starting === item.user_job_id ? (
+                        <><Loader2 size={11} className="animate-spin" /> Regenerating…</>
+                      ) : (
+                        <><RefreshCw size={11} /> Regenerate</>
+                      )}
+                    </button>
+                  )}
+
+                  {/* Regenerate after submission — get a better version */}
+                  {status === "submitted" && (
+                    <button
+                      onClick={() => startApplication(item.user_job_id)}
+                      disabled={starting === item.user_job_id}
+                      className="flex items-center gap-1.5 text-xs font-medium border border-gray-200 text-gray-400 px-3 py-1.5 rounded-lg hover:bg-gray-50 disabled:opacity-60 transition-colors"
+                    >
+                      {starting === item.user_job_id ? (
+                        <><Loader2 size={11} className="animate-spin" /> Regenerating…</>
+                      ) : (
+                        <><RefreshCw size={11} /> Regenerate docs</>
                       )}
                     </button>
                   )}
