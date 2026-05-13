@@ -45,43 +45,17 @@ def get_service_or_user(
 ) -> dict[str, Any]:
     """
     Accepts either:
-    - A Supabase user JWT (audience=authenticated)  → returns {"id": user_id, "email": ...}
-    - The Supabase service-role JWT                 → returns {"id": body.user_id, "service": True}
-      The caller must also pass X-User-Id header with the target user's ID.
+    - A Supabase user JWT  → returns {"id": user_id, "email": ...}
+    - The Supabase service-role key (exact token match) for server-to-server calls.
+      Caller must also supply X-User-Id header with the target user's ID.
     """
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise _unauthorized()
 
     token = credentials.credentials
 
-    # 1. Try as a regular user token
-    try:
-        payload = jwt.decode(
-            token,
-            settings.supabase_jwt_secret,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
-        user_id = payload.get("sub")
-        if not user_id:
-            raise _unauthorized()
-        return {"id": user_id, "email": payload.get("email")}
-    except JWTError:
-        pass
-
-    # 2. Try as service-role token (no audience required)
-    try:
-        payload = jwt.decode(
-            token,
-            settings.supabase_jwt_secret,
-            algorithms=["HS256"],
-            options={"verify_aud": False},
-        )
-        role = payload.get("role")
-        if role != "service_role":
-            raise _unauthorized()
-
-        # Require caller to supply the target user's ID via header
+    # 1. Service-role key: direct string comparison — no JWT decode needed
+    if token == settings.supabase_service_role_key:
         user_id = request.headers.get("X-User-Id")
         if not user_id:
             raise HTTPException(
@@ -89,8 +63,23 @@ def get_service_or_user(
                 detail="X-User-Id header required for service-role calls",
             )
         return {"id": user_id, "service": True}
+
+    # 2. Regular user JWT
+    try:
+        payload = jwt.decode(
+            token,
+            settings.supabase_jwt_secret,
+            algorithms=["HS256"],
+            audience="authenticated",
+        )
     except JWTError as exc:
         raise _unauthorized() from exc
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise _unauthorized()
+
+    return {"id": user_id, "email": payload.get("email")}
 
 
 def get_supabase_admin(
