@@ -157,7 +157,9 @@ export function JobCard({ item, onDecision, isActive, stackIndex }: Props) {
 
         {/* Description */}
         <div className="text-sm text-gray-600 leading-relaxed">
-          <p className={expanded ? "" : "line-clamp-3"}>{job.description}</p>
+          <p className={expanded ? "" : "line-clamp-3"}>
+            {(job.description || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()}
+          </p>
           {!expanded && (
             <button
               onClick={() => setExpanded(true)}
