@@ -70,6 +70,11 @@ def _slim(profile: dict) -> dict:
         "email": profile.get("resume_email") or profile.get("email"),
         "phone": profile.get("phone"),
         "location": profile.get("location"),
+        "linkedin_url": profile.get("linkedin_url"),
+        "github_url": profile.get("github_url"),
+        "portfolio_url": profile.get("portfolio_url"),
+        "summary": profile.get("summary"),
+        "additional_context": profile.get("additional_context"),
         "skills": profile.get("skills", [])[:20],
         "experience": [
             {
