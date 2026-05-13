@@ -27,7 +27,8 @@ export async function GET() {
     needsActionMsgsRes,
   ] = await Promise.all([
     supabase.from("user_jobs").select("id", { count: "exact", head: true }).eq("user_id", uid).eq("status", "pending"),
-    supabase.from("applications").select("id", { count: "exact", head: true }).eq("user_id", uid).eq("status", "submitted"),
+    // "Applied" = any application actively in the pipeline (approved → started/submitted)
+    supabase.from("user_jobs").select("id", { count: "exact", head: true }).eq("user_id", uid).eq("status", "approved"),
     supabase.from("applications").select("id", { count: "exact", head: true }).eq("user_id", uid).in("status", ["submitted","interview_proposed","interview_scheduled"]),
     supabase.from("applications").select("id", { count: "exact", head: true }).eq("user_id", uid).in("status", ["interview_proposed","interview_scheduled"]),
     supabase.from("applications").select("id", { count: "exact", head: true }).eq("user_id", uid).eq("status", "offer_received"),
