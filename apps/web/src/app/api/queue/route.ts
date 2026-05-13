@@ -13,10 +13,10 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status") ?? "pending";
-  const limit = Math.min(Number(searchParams.get("limit") ?? "20"), 50);
-  const cursor = searchParams.get("cursor");
+  // Load up to 200 — client handles filtering/sorting in-memory
+  const limit = Math.min(Number(searchParams.get("limit") ?? "200"), 200);
 
-  let query = supabase
+  const { data, error } = await supabase
     .from("user_jobs")
     .select(
       `
@@ -49,39 +49,25 @@ export async function GET(req: NextRequest) {
     .eq("status", status)
     .order("score", { ascending: false })
     .order("scored_at", { ascending: false })
-    .limit(limit + 1);
+    .limit(limit);
 
-  if (cursor) {
-    // Fetch the score of the cursor item for keyset pagination
-    const cursorRow = await supabase
-      .from("user_jobs")
-      .select("score, scored_at")
-      .eq("id", cursor)
-      .single();
-    if (cursorRow.data) {
-      query = query.lt("score", cursorRow.data.score);
-    }
-  }
-
-  const { data, error } = await query;
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const hasMore = data.length > limit;
-  const items = hasMore ? data.slice(0, limit) : data;
-  const nextCursor = hasMore ? items[items.length - 1].id : null;
+  // Strip HTML tags from description server-side
+  const stripHtml = (html: string) =>
+    html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 
-  // Trim description to 600 chars
-  const mapped = items.map((item) => ({
+  const mapped = (data ?? []).map((item) => ({
     ...item,
     job: item.job
       ? {
           ...item.job,
-          description: (item.job as any).description?.slice(0, 600) ?? "",
+          description: stripHtml((item.job as any).description ?? "").slice(0, 800),
         }
       : null,
   }));
 
-  return NextResponse.json({ items: mapped, next_cursor: nextCursor });
+  return NextResponse.json({ items: mapped, next_cursor: null });
 }

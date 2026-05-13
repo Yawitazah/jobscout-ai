@@ -159,21 +159,40 @@ def scout_for_user(self, user_id: str):
 def _pre_filter(job, preferences: dict) -> bool:
     from app.scout.base import NormalizedJob
 
+    is_normalized = isinstance(job, NormalizedJob)
+    job_title = (job.title if is_normalized else job.get("title", "")).lower()
+    job_work_mode = (job.work_mode if is_normalized else job.get("work_mode", "") or "").lower()
+
+    # --- Title keyword filter ---
     target_titles = [t.lower() for t in preferences.get("target_titles", [])]
-    if not target_titles:
-        return True
+    if target_titles:
+        # Build keyword set — keep all meaningful words including short ones like
+        # "SWE", "iOS", "QA", "ML", "VP", "PM". Only drop true stop words.
+        _stop = {"and", "the", "for", "with", "a", "an", "of", "in", "at", "to"}
+        keywords: set[str] = set()
+        for t in target_titles:
+            for word in t.split():
+                if word not in _stop:
+                    keywords.add(word)
 
-    # Build keyword set — keep all meaningful words including short ones like
-    # "SWE", "iOS", "QA", "ML", "VP", "PM". Only drop true stop words.
-    _stop = {"and", "the", "for", "with", "a", "an", "of", "in", "at", "to"}
-    keywords: set[str] = set()
-    for t in target_titles:
-        for word in t.split():
-            if word not in _stop:
-                keywords.add(word)
+        if keywords and not any(kw in job_title for kw in keywords):
+            return False
 
-    if not keywords:
-        return True  # no filterable keywords → let everything through
+    # --- Work mode filter ---
+    # Normalize preference work modes (e.g. "Remote" → "remote")
+    pref_modes = [m.lower() for m in preferences.get("work_modes", [])]
+    if pref_modes and job_work_mode:
+        # Map job work modes to our labels
+        _mode_map = {
+            "remote": "remote",
+            "hybrid": "hybrid",
+            "onsite": "onsite",
+            "on-site": "onsite",
+            "in-person": "onsite",
+            "in person": "onsite",
+        }
+        normalized_job_mode = _mode_map.get(job_work_mode, job_work_mode)
+        if not any(normalized_job_mode == pm or pm in normalized_job_mode for pm in pref_modes):
+            return False
 
-    title_lower = (job.title if isinstance(job, NormalizedJob) else job.get("title", "")).lower()
-    return any(kw in title_lower for kw in keywords)
+    return True

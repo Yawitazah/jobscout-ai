@@ -90,7 +90,7 @@ export function JobCard({ item, onDecision, isActive, stackIndex }: Props) {
               </div>
             )}
             <div>
-              <p className="font-medium text-gray-900 text-sm">{job.company?.name ?? "Unknown"}</p>
+              <p className="font-medium text-gray-900 text-sm capitalize">{job.company?.name ?? "Unknown"}</p>
               {job.company?.website && (
                 <a
                   href={job.company.website}

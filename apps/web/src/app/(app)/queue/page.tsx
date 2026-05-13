@@ -1,17 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CardStack } from "@/components/queue/CardStack";
 import { UndoToast } from "@/components/queue/UndoToast";
 import { QueueItem } from "@/components/queue/JobCard";
+import {
+  QueueFilterBar,
+  QueueFilters,
+  DEFAULT_FILTERS,
+} from "@/components/queue/QueueFilterBar";
 
 interface UndoState {
   id: string;
   label: string;
 }
 
-async function fetchQueue(cursor?: string): Promise<{ items: QueueItem[]; next_cursor: string | null }> {
-  const url = `/api/queue?status=pending&limit=20${cursor ? `&cursor=${cursor}` : ""}`;
+async function fetchQueue(): Promise<{ items: QueueItem[] }> {
+  const url = `/api/queue?status=pending&limit=200`;
   const r = await fetch(url);
   if (!r.ok) throw new Error("Failed to fetch queue");
   return r.json();
@@ -23,23 +28,83 @@ async function fetchStats(): Promise<{ pending: number; auto_approved_today: num
   return r.json();
 }
 
+function applyFilters(items: QueueItem[], f: QueueFilters): QueueItem[] {
+  let out = items;
+
+  if (f.minScore > 0) {
+    out = out.filter((i) => i.score >= f.minScore);
+  }
+  if (f.workModes.length > 0) {
+    out = out.filter((i) => {
+      const mode = (i.job?.work_mode ?? "").toLowerCase();
+      return f.workModes.some((wm) => mode.includes(wm.toLowerCase()));
+    });
+  }
+  if (f.location) {
+    const loc = f.location.toLowerCase();
+    out = out.filter((i) =>
+      (i.job?.location ?? "").toLowerCase().includes(loc)
+    );
+  }
+  if (f.search) {
+    const kw = f.search.toLowerCase();
+    out = out.filter((i) =>
+      (i.job?.title ?? "").toLowerCase().includes(kw)
+    );
+  }
+  if (f.company) {
+    const co = f.company.toLowerCase();
+    out = out.filter((i) =>
+      ((i.job as any)?.company?.name ?? "").toLowerCase().includes(co)
+    );
+  }
+
+  // Sort
+  out = [...out];
+  if (f.sortBy === "score_desc") {
+    out.sort((a, b) => b.score - a.score);
+  } else if (f.sortBy === "score_asc") {
+    out.sort((a, b) => a.score - b.score);
+  } else if (f.sortBy === "newest") {
+    out.sort(
+      (a, b) =>
+        new Date(b.job?.posted_at ?? 0).getTime() -
+        new Date(a.job?.posted_at ?? 0).getTime()
+    );
+  } else if (f.sortBy === "oldest") {
+    out.sort(
+      (a, b) =>
+        new Date(a.job?.posted_at ?? 0).getTime() -
+        new Date(b.job?.posted_at ?? 0).getTime()
+    );
+  } else if (f.sortBy === "company_az") {
+    out.sort((a, b) =>
+      ((a.job as any)?.company?.name ?? "").localeCompare(
+        (b.job as any)?.company?.name ?? ""
+      )
+    );
+  }
+
+  return out;
+}
+
 export default function QueuePage() {
-  const [items, setItems] = useState<QueueItem[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
+  // All items loaded from the server
+  const [allItems, setAllItems] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ pending: 0, auto_approved_today: 0, auto_rejected_today: 0 });
   const [undo, setUndo] = useState<UndoState | null>(null);
   const [triggering, setTriggering] = useState(false);
+  const [triggerError, setTriggerError] = useState<string | null>(null);
+  const [filters, setFilters] = useState<QueueFilters>(DEFAULT_FILTERS);
   const lastDecisionRef = useRef<{ id: string; prevItem: QueueItem } | null>(null);
   const initialLoaded = useRef(false);
 
-  const load = useCallback(async (reset = false, existingCursor?: string | null) => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const c = reset ? undefined : (existingCursor ?? undefined);
-      const [q, s] = await Promise.all([fetchQueue(c), fetchStats()]);
-      setItems((prev) => (reset ? q.items : [...prev, ...q.items]));
-      setCursor(q.next_cursor);
+      const [q, s] = await Promise.all([fetchQueue(), fetchStats()]);
+      setAllItems(q.items);
       setStats(s);
     } finally {
       setLoading(false);
@@ -49,15 +114,21 @@ export default function QueuePage() {
   useEffect(() => {
     if (initialLoaded.current) return;
     initialLoaded.current = true;
-    load(true);
+    load();
   }, [load]);
+
+  // Apply filters to get the displayed stack
+  const displayedItems = useMemo(
+    () => applyFilters(allItems, filters),
+    [allItems, filters]
+  );
 
   const handleDecision = useCallback(
     async (id: string, decision: "approve" | "reject" | "save") => {
-      const item = items.find((i) => i.id === id);
+      const item = allItems.find((i) => i.id === id);
       if (!item) return;
 
-      setItems((prev) => prev.filter((i) => i.id !== id));
+      setAllItems((prev) => prev.filter((i) => i.id !== id));
       lastDecisionRef.current = { id, prevItem: item };
 
       const labelMap = { approve: "Approved", reject: "Rejected", save: "Saved" };
@@ -71,11 +142,11 @@ export default function QueuePage() {
         });
       } catch {
         if (lastDecisionRef.current?.id === id) {
-          setItems((prev) => [item, ...prev]);
+          setAllItems((prev) => [item, ...prev]);
         }
       }
     },
-    [items]
+    [allItems]
   );
 
   const handleUndo = useCallback(async () => {
@@ -84,25 +155,18 @@ export default function QueuePage() {
     setUndo(null);
     try {
       await fetch(`/api/queue/${last.id}/undo`, { method: "POST" });
-      setItems((prev) => [last.prevItem, ...prev]);
+      setAllItems((prev) => [last.prevItem, ...prev]);
     } catch {
       // ignore
     }
     lastDecisionRef.current = null;
   }, []);
 
-  // Prefetch when 5 cards remain
-  useEffect(() => {
-    if (items.length > 0 && items.length <= 5 && cursor && !loading) {
-      load(false, cursor);
-    }
-  }, [items.length, cursor, loading, load]);
-
   // Keyboard shortcuts
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (items.length === 0) return;
-      const top = items[0];
+      if (displayedItems.length === 0) return;
+      const top = displayedItems[0];
       if (e.key === "ArrowLeft") handleDecision(top.id, "reject");
       if (e.key === "ArrowRight") handleDecision(top.id, "approve");
       if (e.key === "ArrowUp") { e.preventDefault(); handleDecision(top.id, "save"); }
@@ -110,9 +174,7 @@ export default function QueuePage() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [items, handleDecision, handleUndo]);
-
-  const [triggerError, setTriggerError] = useState<string | null>(null);
+  }, [displayedItems, handleDecision, handleUndo]);
 
   const triggerScout = async () => {
     setTriggering(true);
@@ -124,8 +186,7 @@ export default function QueuePage() {
         setTriggerError(data.error ?? `Failed (${res.status})`);
         return;
       }
-      // Wait a few seconds for Celery to pick up the task, then refresh
-      setTimeout(() => load(true), 5000);
+      setTimeout(() => load(), 30000);
     } catch {
       setTriggerError("Network error — could not trigger scout.");
     } finally {
@@ -134,7 +195,7 @@ export default function QueuePage() {
   };
 
   return (
-    <div className="max-w-xl mx-auto space-y-6 pb-20">
+    <div className="max-w-xl mx-auto space-y-4 pb-20">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Today's matches</h1>
@@ -146,6 +207,16 @@ export default function QueuePage() {
         </div>
       </div>
 
+      {/* Filter bar — always shown when items exist */}
+      {!loading && allItems.length > 0 && (
+        <QueueFilterBar
+          filters={filters}
+          totalItems={allItems.length}
+          filteredItems={displayedItems.length}
+          onChange={setFilters}
+        />
+      )}
+
       <div className="hidden sm:flex gap-4 text-xs text-gray-400">
         <span><kbd className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">←</kbd> Reject</span>
         <span><kbd className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">→</kbd> Approve</span>
@@ -153,9 +224,19 @@ export default function QueuePage() {
         <span><kbd className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">U</kbd> Undo</span>
       </div>
 
-      {loading && items.length === 0 ? (
+      {loading && allItems.length === 0 ? (
         <div className="text-center text-gray-400 py-20 text-sm">Loading matches...</div>
-      ) : items.length === 0 ? (
+      ) : displayedItems.length === 0 && allItems.length > 0 ? (
+        <div className="text-center space-y-3 py-16">
+          <p className="text-gray-500 text-sm">No jobs match your current filters.</p>
+          <button
+            onClick={() => setFilters(DEFAULT_FILTERS)}
+            className="text-sm font-medium text-[#1A2B4C] underline"
+          >
+            Clear filters
+          </button>
+        </div>
+      ) : allItems.length === 0 ? (
         <div className="text-center space-y-4 py-20">
           <p className="text-gray-500 text-sm">
             No more matches for now. Next scout runs at 6:00 AM or 4:00 PM ET.
@@ -183,7 +264,7 @@ export default function QueuePage() {
           )}
         </div>
       ) : (
-        <CardStack items={items} onDecision={handleDecision} />
+        <CardStack items={displayedItems} onDecision={handleDecision} />
       )}
 
       {undo && (
