@@ -40,7 +40,7 @@ class LeverFiller(FormFiller):
         await self.page.wait_for_load_state("networkidle", timeout=15000)
 
         await self._fill_text(_FIRST_NAME, self.profile.get("full_name") or "", "full_name")
-        await self._fill_text(_EMAIL, self.profile.get("email") or "", "email")
+        await self._fill_text(_EMAIL, self.profile.get("resume_email") or self.profile.get("email") or "", "email")
         await self._fill_text(_PHONE, self.profile.get("phone") or "", "phone")
 
         experience = self.profile.get("experience") or []

@@ -46,7 +46,7 @@ class GreenhouseFiller(FormFiller):
 
         await self._fill_text(_FIRST_NAME, first, "first_name")
         await self._fill_text(_LAST_NAME, last, "last_name")
-        await self._fill_text(_EMAIL, self.profile.get("email") or "", "email")
+        await self._fill_text(_EMAIL, self.profile.get("resume_email") or self.profile.get("email") or "", "email")
         await self._fill_text(_PHONE, self.profile.get("phone") or "", "phone")
 
         if self.cover_letter_text:

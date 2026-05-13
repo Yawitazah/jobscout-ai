@@ -427,7 +427,7 @@ def _build_contact(profile: dict) -> dict:
     """Extract contact fields from profile for embedding in content_json."""
     return {k: v for k, v in {
         "full_name": profile.get("full_name"),
-        "email": profile.get("email"),
+        "email": profile.get("resume_email") or profile.get("email"),
         "phone": profile.get("phone"),
         "location": profile.get("location"),
         "linkedin_url": profile.get("linkedin_url"),

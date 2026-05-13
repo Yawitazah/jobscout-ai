@@ -140,7 +140,7 @@ def _slim_profile(profile: dict) -> dict:
     """Pass through all profile fields the AI should know about."""
     slim = {
         "full_name": profile.get("full_name"),
-        "email": profile.get("email"),
+        "email": profile.get("resume_email") or profile.get("email"),
         "phone": profile.get("phone"),
         "location": profile.get("location"),
         "linkedin_url": profile.get("linkedin_url"),

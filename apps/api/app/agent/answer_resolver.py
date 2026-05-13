@@ -67,7 +67,7 @@ def resolve_answer(
 def _slim(profile: dict) -> dict:
     return {
         "full_name": profile.get("full_name"),
-        "email": profile.get("email"),
+        "email": profile.get("resume_email") or profile.get("email"),
         "phone": profile.get("phone"),
         "location": profile.get("location"),
         "skills": profile.get("skills", [])[:20],
