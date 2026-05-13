@@ -70,12 +70,17 @@ async def start_application(
         }).select("id").execute()
         application_id = result.data[0]["id"]
 
-    from app.worker.tasks.apply import submit_application
-    submit_application.delay(application_id, user["id"])
+    try:
+        from app.worker.tasks.apply import submit_application
+        submit_application.delay(application_id, user["id"])
+    except Exception as exc:
+        logger.exception("Failed to queue submit_application task: %s", exc)
+        supabase.table("applications").update({"status": "submit_failed", "updated_at": now}).eq("id", application_id).execute()
+        raise HTTPException(status_code=502, detail=f"Failed to queue application task: {exc}") from exc
 
-    supabase.table("applications").update({"status": "submitting", "updated_at": now}).eq("id", application_id).execute()
+    supabase.table("applications").update({"status": "tailoring_resume", "updated_at": now}).eq("id", application_id).execute()
 
-    return StartApplicationResponse(application_id=application_id, status="submitting")
+    return StartApplicationResponse(application_id=application_id, status="tailoring_resume")
 
 
 class TailorResponse(BaseModel):

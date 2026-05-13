@@ -59,29 +59,59 @@ export default function ApplicationsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("all");
   const [starting, setStarting] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const loadJobs = async () => {
+    const r = await fetch("/api/applications");
+    const d = await r.json();
+    if (d.applications) setJobs(d.applications);
+  };
 
   useEffect(() => {
-    fetch("/api/applications")
-      .then((r) => r.json())
-      .then((d) => setJobs(d.applications ?? []))
-      .finally(() => setLoading(false));
+    loadJobs().finally(() => setLoading(false));
+
+    // Poll every 8 s while any job is in an in-progress state
+    const timer = setInterval(() => {
+      loadJobs();
+    }, 8000);
+    return () => clearInterval(timer);
   }, []);
 
   const startApplication = async (userJobId: string) => {
     setStarting(userJobId);
+    setErrors((e) => ({ ...e, [userJobId]: "" }));
     try {
       const res = await fetch(`/api/applications/start/${userJobId}`, { method: "POST" });
-      if (res.ok) {
-        const data = await res.json();
-        // Optimistically update status
-        setJobs((prev) =>
-          prev.map((j) =>
-            j.user_job_id === userJobId
-              ? { ...j, application: { ...j.application, id: data.application_id, status: "tailoring_resume" } as any }
-              : j
-          )
-        );
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        const msg = data?.detail || data?.error || `Error ${res.status}`;
+        setErrors((e) => ({ ...e, [userJobId]: msg }));
+        return;
       }
+
+      // Optimistically flip to tailoring_resume so the button disappears immediately
+      setJobs((prev) =>
+        prev.map((j) =>
+          j.user_job_id === userJobId
+            ? {
+                ...j,
+                application: {
+                  id: data.application_id ?? "",
+                  status: data.status ?? "tailoring_resume",
+                  submission_method: null,
+                  confirmation_number: null,
+                  submitted_at: null,
+                  updated_at: new Date().toISOString(),
+                  resume_doc_id: null,
+                  cover_letter_doc_id: null,
+                },
+              }
+            : j
+        )
+      );
+    } catch (err: any) {
+      setErrors((e) => ({ ...e, [userJobId]: err?.message ?? "Network error" }));
     } finally {
       setStarting(null);
     }
@@ -213,43 +243,52 @@ export default function ApplicationsPage() {
               </div>
 
               {/* Action row */}
-              <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-50">
-                {/* View application detail */}
-                {app?.id && (
-                  <Link
-                    href={`/applications/${app.id}`}
-                    className="text-xs font-medium text-[#1A2B4C] hover:underline"
-                  >
-                    View details →
-                  </Link>
+              <div className="flex flex-col gap-1 mt-3 pt-3 border-t border-gray-50">
+                {/* Error message */}
+                {errors[item.user_job_id] && (
+                  <p className="text-xs text-red-600 mb-1">
+                    ⚠ {errors[item.user_job_id]}
+                  </p>
                 )}
 
-                {/* (Re-)start application */}
-                {(!app || ["queued", "submit_failed"].includes(status)) && (
-                  <button
-                    onClick={() => startApplication(item.user_job_id)}
-                    disabled={starting === item.user_job_id}
-                    className="ml-auto flex items-center gap-1.5 text-xs font-medium bg-[#1A2B4C] text-white px-3 py-1.5 rounded-lg hover:bg-[#243b63] disabled:opacity-60 transition-colors"
-                  >
-                    {starting === item.user_job_id ? (
-                      <><Loader2 size={11} className="animate-spin" /> Starting…</>
-                    ) : (
-                      <><Play size={11} /> {app ? "Retry" : "Start Application"}</>
-                    )}
-                  </button>
-                )}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* View application detail */}
+                  {app?.id && (
+                    <Link
+                      href={`/applications/${app.id}`}
+                      className="text-xs font-medium text-[#1A2B4C] hover:underline"
+                    >
+                      View details →
+                    </Link>
+                  )}
 
-                {/* Manual apply link */}
-                {job?.source_url && (
-                  <a
-                    href={job.source_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="ml-auto text-xs text-gray-400 hover:text-gray-600 hover:underline"
-                  >
-                    Apply manually ↗
-                  </a>
-                )}
+                  {/* (Re-)start application */}
+                  {(!app || ["queued", "submit_failed"].includes(status)) && (
+                    <button
+                      onClick={() => startApplication(item.user_job_id)}
+                      disabled={starting === item.user_job_id}
+                      className="flex items-center gap-1.5 text-xs font-medium bg-[#1A2B4C] text-white px-3 py-1.5 rounded-lg hover:bg-[#243b63] disabled:opacity-60 transition-colors"
+                    >
+                      {starting === item.user_job_id ? (
+                        <><Loader2 size={11} className="animate-spin" /> Starting…</>
+                      ) : (
+                        <><Play size={11} /> {app ? "Retry" : "Start Application"}</>
+                      )}
+                    </button>
+                  )}
+
+                  {/* Manual apply link */}
+                  {job?.source_url && (
+                    <a
+                      href={job.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-auto text-xs text-gray-400 hover:text-gray-600 hover:underline"
+                    >
+                      Apply manually ↗
+                    </a>
+                  )}
+                </div>
               </div>
 
               <p className="text-[10px] text-gray-300 mt-2">
