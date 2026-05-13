@@ -172,8 +172,8 @@ export function JobCard({ item, onDecision, isActive, stackIndex }: Props) {
           )}
         </div>
 
-        {/* ── View buttons ── */}
-        <div className="flex flex-col gap-2 mt-auto pt-3 border-t border-gray-100">
+        {/* ── View listing ── */}
+        <div className="mt-auto pt-3 border-t border-gray-100">
           <a
             href={job.source_url}
             target="_blank"
@@ -183,16 +183,6 @@ export function JobCard({ item, onDecision, isActive, stackIndex }: Props) {
           >
             <ExternalLink size={12} />
             View Original Listing
-          </a>
-          <a
-            href={job.source_url}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="flex items-center justify-center gap-2 text-xs font-semibold text-[#1A2B4C] border border-[#1A2B4C] rounded-lg px-3 py-2 hover:bg-[#1A2B4C] hover:text-white transition-colors"
-          >
-            <ExternalLink size={12} />
-            View &amp; Manually Apply
           </a>
         </div>
       </div>
