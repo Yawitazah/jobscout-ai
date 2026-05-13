@@ -10,13 +10,22 @@ logger = logging.getLogger(__name__)
 def build_docx(content_json: dict, full_name: str) -> bytes:
     """Return DOCX bytes from a tailored resume JSON."""
     from docx import Document
-    from docx.shared import Pt, RGBColor
+    from docx.shared import Pt, Inches
     from docx.enum.text import WD_ALIGN_PARAGRAPH
 
     contact = content_json.get("contact") or {}
     name = contact.get("full_name") or full_name
 
     doc = Document()
+
+    # --- Page setup: US Letter, 0.75in margins ---
+    section = doc.sections[0]
+    section.page_width = Inches(8.5)
+    section.page_height = Inches(11)
+    section.top_margin = Inches(0.75)
+    section.bottom_margin = Inches(0.75)
+    section.left_margin = Inches(0.75)
+    section.right_margin = Inches(0.75)
 
     # --- Name header ---
     heading = doc.add_heading(name, level=0)
