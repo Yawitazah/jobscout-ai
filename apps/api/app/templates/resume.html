@@ -6,6 +6,8 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: "Helvetica Neue", Arial, sans-serif; font-size: 11pt; color: #111; padding: 36px 48px; }
   h1 { font-size: 22pt; font-weight: 700; text-align: center; margin-bottom: 4px; }
+  .contact-line { text-align: center; font-size: 9.5pt; color: #444; margin-top: 4px; margin-bottom: 2px; }
+  .contact-line a { color: #444; text-decoration: none; }
   h2 { font-size: 12pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
        border-bottom: 1px solid #ccc; margin-top: 16px; margin-bottom: 6px; padding-bottom: 2px; }
   .summary { margin-top: 8px; line-height: 1.5; }
@@ -17,13 +19,33 @@
   ul li { margin-bottom: 2px; line-height: 1.45; }
   .edu-row { display: flex; justify-content: space-between; }
   .edu-degree { font-weight: 600; }
+  .cert-row { margin-top: 4px; }
+  .cert-name { font-weight: 600; }
 </style>
 </head>
 <body>
 
-<h1>{{ full_name }}</h1>
+{% set contact = resume.contact or {} %}
+<h1>{{ contact.full_name or full_name }}</h1>
+
+{% set contact_parts = [] %}
+{% if contact.email %}{% set _ = contact_parts.append(contact.email) %}{% endif %}
+{% if contact.phone %}{% set _ = contact_parts.append(contact.phone) %}{% endif %}
+{% if contact.location %}{% set _ = contact_parts.append(contact.location) %}{% endif %}
+{% if contact_parts %}
+<div class="contact-line">{{ contact_parts | join(" &nbsp;|&nbsp; ") }}</div>
+{% endif %}
+
+{% set link_parts = [] %}
+{% if contact.linkedin_url %}{% set _ = link_parts.append(contact.linkedin_url) %}{% endif %}
+{% if contact.github_url %}{% set _ = link_parts.append(contact.github_url) %}{% endif %}
+{% if contact.portfolio_url %}{% set _ = link_parts.append(contact.portfolio_url) %}{% endif %}
+{% if link_parts %}
+<div class="contact-line">{{ link_parts | join(" &nbsp;|&nbsp; ") }}</div>
+{% endif %}
 
 {% if resume.summary %}
+<h2>Summary</h2>
 <div class="summary">{{ resume.summary }}</div>
 {% endif %}
 
@@ -45,6 +67,28 @@
     {% for b in exp.bullets %}<li>{{ b }}</li>{% endfor %}
   </ul>
   {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+
+{% if resume.certifications %}
+<h2>Certifications</h2>
+{% for cert in resume.certifications %}
+<div class="cert-row">
+  <span class="cert-name">{{ cert.name }}</span>
+  {% if cert.issuer %} &mdash; {{ cert.issuer }}{% endif %}
+  {% if cert.year %} ({{ cert.year }}){% endif %}
+</div>
+{% endfor %}
+{% endif %}
+
+{% if resume.projects %}
+<h2>Projects</h2>
+{% for proj in resume.projects %}
+<div style="margin-top: 6px;">
+  <span style="font-weight:600;">{{ proj.name }}</span>
+  {% if proj.technologies %} &mdash; <em>{{ proj.technologies | join(", ") }}</em>{% endif %}
+  <div style="margin-top:2px; font-size:10.5pt;">{{ proj.description }}</div>
 </div>
 {% endfor %}
 {% endif %}

@@ -164,6 +164,7 @@ async def tailor_resume_for_job(
         verification = {"passed": False, "violations": [], "fix_instructions": ""}
 
     v_status = "passed" if verification.get("passed") else "failed_review"
+    tailored["contact"] = _build_contact(profile)
     content_text = _render_text(tailored, profile)
 
     now = datetime.now(timezone.utc).isoformat()
@@ -413,7 +414,7 @@ def _get_doc_and_profile(user_job_id: str, user: dict, supabase: Client) -> tupl
 
     profile_row = (
         supabase.table("profiles")
-        .select("full_name")
+        .select("full_name, email, phone, location, linkedin_url, github_url, portfolio_url")
         .eq("id", user["id"])
         .single()
         .execute()
@@ -421,11 +422,31 @@ def _get_doc_and_profile(user_job_id: str, user: dict, supabase: Client) -> tupl
     return doc_row.data, profile_row.data or {}
 
 
+def _build_contact(profile: dict) -> dict:
+    """Extract contact fields from profile for embedding in content_json."""
+    return {k: v for k, v in {
+        "full_name": profile.get("full_name"),
+        "email": profile.get("email"),
+        "phone": profile.get("phone"),
+        "location": profile.get("location"),
+        "linkedin_url": profile.get("linkedin_url"),
+        "github_url": profile.get("github_url"),
+        "portfolio_url": profile.get("portfolio_url"),
+    }.items() if v}
+
+
 def _render_text(tailored: dict, profile: dict) -> str:
     lines: list[str] = []
-    name = profile.get("full_name") or ""
+    contact = tailored.get("contact") or _build_contact(profile)
+    name = contact.get("full_name") or profile.get("full_name") or ""
     if name:
         lines.append(name)
+    contact_parts = [p for p in [
+        contact.get("email"), contact.get("phone"), contact.get("location"),
+        contact.get("linkedin_url"), contact.get("github_url"), contact.get("portfolio_url"),
+    ] if p]
+    if contact_parts:
+        lines.append(" | ".join(contact_parts))
     if tailored.get("summary"):
         lines.append("")
         lines.append(tailored["summary"])

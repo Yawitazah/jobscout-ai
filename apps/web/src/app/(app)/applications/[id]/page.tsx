@@ -73,6 +73,7 @@ export default function ApplicationDetailPage({
   const [tab, setTab] = useState<Tab>("resume");
   const [submitting, setSubmitting] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [showAgentCmd, setShowAgentCmd] = useState(false);
 
   useEffect(() => {
     fetch(`/api/applications/${id}`)
@@ -195,15 +196,32 @@ export default function ApplicationDetailPage({
               {submitting ? "Starting…" : "Start Pipeline"}
             </button>
           )}
-          {/* Docs ready — remind user to run local agent */}
+          {/* Docs ready — show local agent command */}
           {app.status === "ready_to_submit" && hasDocs && (
-            <span className="text-xs text-blue-600 font-medium">Run local agent to submit ↗</span>
+            <button
+              onClick={() => setShowAgentCmd((v) => !v)}
+              className="text-xs text-blue-600 font-medium hover:underline"
+            >
+              Run local agent to submit {showAgentCmd ? "▲" : "▼"}
+            </button>
           )}
           {app.status === "submitted" && app.confirmation_number && (
             <span className="text-xs text-gray-500">Ref: {app.confirmation_number}</span>
           )}
         </div>
       </div>
+
+      {/* Local agent command panel */}
+      {showAgentCmd && app.status === "ready_to_submit" && hasDocs && (
+        <div className="bg-slate-900 text-slate-100 rounded-xl p-4 space-y-2 text-xs font-mono">
+          <p className="text-slate-400 font-sans font-medium text-[11px] uppercase tracking-wider">Run the local agent on your machine</p>
+          <p className="text-slate-300 font-sans text-xs mb-2">The local agent opens a real browser and submits the application on your behalf using Claude computer use.</p>
+          <div className="bg-slate-800 rounded-lg px-3 py-2 select-all text-green-400">
+            cd apps/api && python -m app.agent.local_runner
+          </div>
+          <p className="text-slate-500 font-sans text-[11px]">Make sure your <code className="text-slate-300">.env</code> has <code className="text-slate-300">SUPABASE_URL</code>, <code className="text-slate-300">SUPABASE_SERVICE_ROLE_KEY</code>, and <code className="text-slate-300">ANTHROPIC_API_KEY</code> set before running.</p>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-100">
@@ -263,6 +281,9 @@ function ResumeTab({ app, onRegenerate }: { app: ApplicationDetail; onRegenerate
     );
   }
 
+  const contact = (resume.content_json as any)?.contact ?? {};
+  const rj = resume.content_json as any;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -271,7 +292,7 @@ function ResumeTab({ app, onRegenerate }: { app: ApplicationDetail; onRegenerate
             resume.verification_status === "passed"
               ? "bg-green-50 text-green-700"
               : resume.verification_status === "failed_review"
-              ? "bg-red-50 text-red-700"
+              ? "bg-amber-50 text-amber-700"
               : "bg-gray-50 text-gray-500"
           }`}>
             {resume.verification_status === "passed" ? "Verified" :
@@ -291,13 +312,13 @@ function ResumeTab({ app, onRegenerate }: { app: ApplicationDetail; onRegenerate
           {userJobId && (
             <>
               <a
-                href={`${process.env.NEXT_PUBLIC_API_URL}/applications/${userJobId}/resume/download/docx`}
+                href={`/api/applications/resume/download/${userJobId}/docx`}
                 className="flex items-center gap-1 text-xs text-gray-500 border border-gray-200 px-2.5 py-1.5 rounded-[6px] hover:bg-gray-50"
               >
                 <Download size={11} /> DOCX
               </a>
               <a
-                href={`${process.env.NEXT_PUBLIC_API_URL}/applications/${userJobId}/resume/download/pdf`}
+                href={`/api/applications/resume/download/${userJobId}/pdf`}
                 className="flex items-center gap-1 text-xs text-gray-500 border border-gray-200 px-2.5 py-1.5 rounded-[6px] hover:bg-gray-50"
               >
                 <Download size={11} /> PDF
@@ -307,18 +328,110 @@ function ResumeTab({ app, onRegenerate }: { app: ApplicationDetail; onRegenerate
         </div>
       </div>
 
-      {resume.verification_notes.length > 0 && (
+      {resume.verification_status === "failed_review" && (
         <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 space-y-1">
-          <p className="text-xs font-medium text-amber-700">Verification issues</p>
+          <p className="text-xs font-medium text-amber-700">
+            AI flagged potential issues — review before submitting. The resume is still usable; click Regenerate to try for a cleaner pass.
+          </p>
           {resume.verification_notes.map((n, i) => (
             <p key={i} className="text-xs text-amber-600">• {n.field}: {n.issue}</p>
           ))}
         </div>
       )}
 
-      <pre className="text-xs text-gray-700 whitespace-pre-wrap font-sans leading-relaxed bg-gray-50 rounded-xl p-4 max-h-[500px] overflow-y-auto">
-        {resume.content_text}
-      </pre>
+      {/* Structured resume preview */}
+      <div className="bg-white border border-gray-100 rounded-xl p-6 space-y-4 text-sm text-gray-800 max-h-[600px] overflow-y-auto">
+        {/* Contact header */}
+        <div className="text-center space-y-1 pb-3 border-b border-gray-100">
+          <p className="text-lg font-bold">{contact.full_name || "—"}</p>
+          {(contact.email || contact.phone || contact.location) && (
+            <p className="text-xs text-gray-500">
+              {[contact.email, contact.phone, contact.location].filter(Boolean).join(" · ")}
+            </p>
+          )}
+          {(contact.linkedin_url || contact.github_url || contact.portfolio_url) && (
+            <p className="text-xs text-gray-400">
+              {[contact.linkedin_url, contact.github_url, contact.portfolio_url].filter(Boolean).join(" · ")}
+            </p>
+          )}
+        </div>
+
+        {rj?.summary && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Summary</p>
+            <p className="text-sm leading-relaxed">{rj.summary}</p>
+          </div>
+        )}
+
+        {rj?.skills?.length > 0 && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Skills</p>
+            <p className="text-sm leading-relaxed">{rj.skills.join(", ")}</p>
+          </div>
+        )}
+
+        {rj?.experience?.length > 0 && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Experience</p>
+            <div className="space-y-3">
+              {rj.experience.map((exp: any, i: number) => (
+                <div key={i}>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-semibold text-sm">{exp.title} — {exp.company}</p>
+                    <p className="text-xs text-gray-400 shrink-0">{exp.start_date || ""} – {exp.end_date || "Present"}</p>
+                  </div>
+                  {exp.bullets?.length > 0 && (
+                    <ul className="mt-1 space-y-0.5 ml-4 list-disc">
+                      {exp.bullets.map((b: string, j: number) => (
+                        <li key={j} className="text-xs text-gray-700 leading-relaxed">{b}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {rj?.certifications?.length > 0 && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Certifications</p>
+            <div className="space-y-1">
+              {rj.certifications.map((c: any, i: number) => (
+                <p key={i} className="text-xs">{c.name}{c.issuer ? ` — ${c.issuer}` : ""}{c.year ? ` (${c.year})` : ""}</p>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {rj?.projects?.length > 0 && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Projects</p>
+            <div className="space-y-2">
+              {rj.projects.map((p: any, i: number) => (
+                <div key={i}>
+                  <p className="text-xs font-semibold">{p.name}{p.technologies?.length ? ` — ${p.technologies.join(", ")}` : ""}</p>
+                  {p.description && <p className="text-xs text-gray-600">{p.description}</p>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {rj?.education?.length > 0 && (
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Education</p>
+            <div className="space-y-1">
+              {rj.education.map((e: any, i: number) => (
+                <div key={i} className="flex justify-between">
+                  <p className="text-xs font-semibold">{e.degree} — {e.institution}</p>
+                  {e.graduation_year && <p className="text-xs text-gray-400">{e.graduation_year}</p>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

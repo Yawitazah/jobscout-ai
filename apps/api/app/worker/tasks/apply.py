@@ -120,6 +120,8 @@ def _prepare(application_id: str, user_id: str) -> None:
                 verification = {"passed": False, "violations": [], "fix_instructions": ""}
 
             v_status = "passed" if verification.get("passed") else "failed_review"
+            from app.routers.applications import _build_contact
+            tailored["contact"] = _build_contact(profile)
             content_text = _render_text(tailored, profile)
 
             now = datetime.now(timezone.utc).isoformat()
