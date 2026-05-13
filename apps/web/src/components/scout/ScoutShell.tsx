@@ -211,12 +211,21 @@ export function ScoutShell({ initialConversationId, applicationId, onClose }: Pr
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
 
-  // Load messages when activeId changes
+  // Load messages when activeId changes.
+  // Skip overwriting state if a stream is in progress (avoid wiping optimistic messages).
   useEffect(() => {
     if (!activeId) { setMessages([]); return; }
     fetch(`/api/scout/conversations/${activeId}`)
       .then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (data) setMessages(data.messages ?? []); });
+      .then((data) => {
+        if (data) {
+          setMessages((prev) => {
+            // If any message is still streaming, keep the optimistic state
+            if (prev.some((m) => (m as Message & { streaming?: boolean }).streaming)) return prev;
+            return data.messages ?? [];
+          });
+        }
+      });
   }, [activeId]);
 
   // Scroll to bottom on new messages
