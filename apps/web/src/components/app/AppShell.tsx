@@ -9,6 +9,7 @@ import { UserProvider } from "./UserContext";
 import { UserAvatar } from "./UserAvatar";
 import { BellMenu } from "./BellMenu";
 import { navItems, tabItems } from "./NavConfig";
+import { ScoutBubble } from "@/components/scout/ScoutBubble";
 import { cn } from "@/lib/utils";
 
 function NavLink({
@@ -211,6 +212,8 @@ export function AppShell({
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
       />
+
+      <ScoutBubble />
     </UserProvider>
   );
 }

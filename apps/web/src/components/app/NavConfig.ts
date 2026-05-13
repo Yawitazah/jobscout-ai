@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Mail,
   Bell,
+  Crosshair,
   type LucideIcon,
 } from "lucide-react";
 
@@ -19,6 +20,7 @@ export interface NavItem {
 
 export const navItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Scout", href: "/scout", icon: Crosshair },
   { label: "Job Queue", href: "/queue", icon: Inbox },
   { label: "Applications", href: "/applications", icon: FileText },
   { label: "Interviews", href: "/interviews", icon: Calendar },
@@ -37,7 +39,7 @@ export interface TabItem {
 
 export const tabItems: TabItem[] = [
   { label: "Queue", href: "/queue", icon: Inbox },
-  { label: "Pipeline", href: "/applications", icon: FileText },
+  { label: "Scout", href: "/scout", icon: Crosshair },
   { label: "Interviews", href: "/interviews", icon: Calendar },
   { label: "More", href: null, icon: LayoutDashboard },
 ];
