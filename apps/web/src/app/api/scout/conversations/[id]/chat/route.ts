@@ -495,6 +495,28 @@ async function handleAnswerApplicationQuestion(
 
   if (error) return `Failed to save answer: ${error.message}`;
 
+  // Also save to profile_memories so the answer informs future resume generation.
+  // Look up job context to make the memory more useful.
+  try {
+    const { data: appRow } = await admin
+      .from("applications")
+      .select("user_job:user_jobs(job:jobs(title, company:companies(name)))")
+      .eq("id", application_id)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const uj = (appRow as any)?.user_job;
+    const jobTitle: string = uj?.job?.title ?? "";
+    const companyName: string = uj?.job?.company?.name ?? "";
+    const prefix = jobTitle && companyName ? `[${jobTitle} @ ${companyName}] ` : "";
+    const memoryContent = `${prefix}${question_key}: ${answer}`;
+
+    await admin.from("profile_memories").insert({ user_id: userId, content: memoryContent, source: "scout" });
+  } catch {
+    // Non-fatal — don't fail the whole save just because the memory write failed
+  }
+
   // If all answered, reset application status to ready_to_submit
   if (all_answered) {
     await admin

@@ -98,7 +98,17 @@ export default function ApplicationDetailPage({
           filter: `id=eq.${id}`,
         },
         (payload) => {
-          setApp((prev) => prev ? { ...prev, ...(payload.new as Partial<ApplicationDetail>) } : prev);
+          const newStatus = (payload.new as Partial<ApplicationDetail>).status;
+          // When tailoring/writing completes, do a full refetch so we get the
+          // newly generated resume + cover_letter joined data (not in realtime payload).
+          const completedStatuses = ["ready_to_submit", "submitted", "submit_failed", "more_info_needed"];
+          if (newStatus && completedStatuses.includes(newStatus)) {
+            fetch(`/api/applications/${id}`)
+              .then((r) => r.json())
+              .then(setApp);
+          } else {
+            setApp((prev) => prev ? { ...prev, ...(payload.new as Partial<ApplicationDetail>) } : prev);
+          }
         }
       )
       .subscribe();
