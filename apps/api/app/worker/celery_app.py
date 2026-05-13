@@ -12,6 +12,7 @@ celery_app = Celery(
         "app.worker.tasks.scoring",
         "app.worker.tasks.inbox",
         "app.worker.tasks.interviews",
+        "app.worker.tasks.apply",
     ],
 )
 

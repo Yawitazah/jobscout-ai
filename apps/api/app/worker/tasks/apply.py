@@ -32,9 +32,12 @@ def submit_application(self, application_id: str, user_id: str):
 async def _submit(application_id: str, user_id: str) -> None:
     supabase = _get_supabase()
 
+    # ------------------------------------------------------------------ #
+    # 1. Load application + related records
+    # ------------------------------------------------------------------ #
     app_row = (
         supabase.table("applications")
-        .select("*, user_jobs(job_id), generated_documents!resume_doc_id(content_json, content_text), generated_documents!cover_letter_doc_id(content_text)")
+        .select("*, user_jobs(job_id)")
         .eq("id", application_id)
         .single()
         .execute()
@@ -51,7 +54,7 @@ async def _submit(application_id: str, user_id: str) -> None:
 
     job_row = (
         supabase.table("jobs")
-        .select("source_url, source_platform, title, company_id")
+        .select("source_url, source_platform, title, description, location, work_mode, company_id")
         .eq("id", job_id)
         .single()
         .execute()
@@ -66,6 +69,15 @@ async def _submit(application_id: str, user_id: str) -> None:
     if not platform or not apply_url:
         _mark_failed(supabase, application_id, "missing platform or source_url")
         return
+
+    company_row = (
+        supabase.table("companies")
+        .select("name")
+        .eq("id", job.get("company_id", ""))
+        .maybe_single()
+        .execute()
+    )
+    job["company_name"] = company_row.data["name"] if company_row.data else ""
 
     profile_row = (
         supabase.table("profiles")
@@ -87,12 +99,70 @@ async def _submit(application_id: str, user_id: str) -> None:
     )
     saved_answers = {r["question_key"]: r["answer"] for r in (saved_row.data or [])}
 
-    resume_doc = app.get("generated_documents!resume_doc_id") or {}
-    cover_letter_doc = app.get("generated_documents!cover_letter_doc_id") or {}
-    cover_letter_text = cover_letter_doc.get("content_text") or ""
-
-    resume_json = resume_doc.get("content_json") or {}
+    # ------------------------------------------------------------------ #
+    # 2. Generate tailored resume (if not already done)
+    # ------------------------------------------------------------------ #
+    user_job_id = app.get("user_job_id")
+    resume_doc_id = app.get("resume_doc_id")
+    resume_json: dict = {}
     resume_pdf: bytes | None = None
+
+    if resume_doc_id:
+        # Already generated — just fetch the JSON
+        existing_doc = (
+            supabase.table("generated_documents")
+            .select("content_json")
+            .eq("id", resume_doc_id)
+            .single()
+            .execute()
+        )
+        resume_json = (existing_doc.data or {}).get("content_json") or {}
+    elif profile.get("experience") or profile.get("skills"):
+        # Auto-generate now
+        _set_status(supabase, application_id, "tailoring_resume")
+        try:
+            from app.services.ai.resume_tailor import tailor_resume
+            from app.services.ai.resume_verifier import verify_and_fix
+            from app.routers.applications import _render_text
+
+            raw_tailored = tailor_resume(profile, job)
+            try:
+                tailored, verification = verify_and_fix(profile, raw_tailored, max_cycles=2)
+            except Exception as ve:
+                logger.warning("Resume verification failed, using raw: %s", ve)
+                tailored = raw_tailored
+                verification = {"passed": False, "violations": [], "fix_instructions": ""}
+
+            v_status = "passed" if verification.get("passed") else "failed_review"
+            content_text = _render_text(tailored, profile)
+            resume_json = tailored
+
+            now = datetime.now(timezone.utc).isoformat()
+            doc = (
+                supabase.table("generated_documents")
+                .insert({
+                    "user_id": user_id,
+                    "user_job_id": user_job_id,
+                    "document_type": "resume",
+                    "content_json": tailored,
+                    "content_text": content_text,
+                    "generation_model": "claude-sonnet-4-6",
+                    "verification_status": v_status,
+                    "verification_notes": verification.get("violations", []),
+                    "created_at": now,
+                })
+                .select("id")
+                .execute()
+            )
+            resume_doc_id = doc.data[0]["id"]
+            supabase.table("applications").update({
+                "resume_doc_id": resume_doc_id,
+                "updated_at": now,
+            }).eq("id", application_id).execute()
+            logger.info("Auto-generated resume %s for application %s", resume_doc_id, application_id)
+        except Exception as exc:
+            logger.warning("Resume tailoring failed, continuing without: %s", exc)
+
     if resume_json:
         try:
             from app.services.documents.resume_builder import build_pdf
@@ -100,6 +170,63 @@ async def _submit(application_id: str, user_id: str) -> None:
         except Exception as exc:
             logger.warning("PDF generation failed, continuing without: %s", exc)
 
+    # ------------------------------------------------------------------ #
+    # 3. Generate cover letter (if not already done)
+    # ------------------------------------------------------------------ #
+    cover_letter_doc_id = app.get("cover_letter_doc_id")
+    cover_letter_text = ""
+
+    if cover_letter_doc_id:
+        existing_cl = (
+            supabase.table("generated_documents")
+            .select("content_text")
+            .eq("id", cover_letter_doc_id)
+            .single()
+            .execute()
+        )
+        cover_letter_text = (existing_cl.data or {}).get("content_text") or ""
+    elif profile.get("experience") or profile.get("skills"):
+        _set_status(supabase, application_id, "writing_cover_letter")
+        try:
+            from app.services.ai.cover_letter import generate_cover_letter
+
+            result = generate_cover_letter(profile, job)
+            paragraphs = result.get("paragraphs", [])
+            cover_letter_text = "\n\n".join(paragraphs)
+            content_json = {
+                "paragraphs": paragraphs,
+                "word_count": result.get("word_count", 0),
+                "banned_words_found": result.get("banned_words_found", []),
+            }
+
+            now = datetime.now(timezone.utc).isoformat()
+            cl_doc = (
+                supabase.table("generated_documents")
+                .insert({
+                    "user_id": user_id,
+                    "user_job_id": user_job_id,
+                    "document_type": "cover_letter",
+                    "content_json": content_json,
+                    "content_text": cover_letter_text,
+                    "generation_model": "claude-sonnet-4-6",
+                    "verification_status": "passed",
+                    "created_at": now,
+                })
+                .select("id")
+                .execute()
+            )
+            cover_letter_doc_id = cl_doc.data[0]["id"]
+            supabase.table("applications").update({
+                "cover_letter_doc_id": cover_letter_doc_id,
+                "updated_at": now,
+            }).eq("id", application_id).execute()
+            logger.info("Auto-generated cover letter %s for application %s", cover_letter_doc_id, application_id)
+        except Exception as exc:
+            logger.warning("Cover letter generation failed, continuing without: %s", exc)
+
+    # ------------------------------------------------------------------ #
+    # 4. Submit via Playwright
+    # ------------------------------------------------------------------ #
     _set_status(supabase, application_id, "submitting")
 
     from app.agent.browser import get_page
@@ -150,7 +277,6 @@ async def _submit(application_id: str, user_id: str) -> None:
 
 
 async def _upload_screenshot(supabase, png: bytes, user_id: str, application_id: str) -> str | None:
-    from datetime import datetime, timezone
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
     path = f"{user_id}/{application_id}/{ts}_confirmation.png"
     try:

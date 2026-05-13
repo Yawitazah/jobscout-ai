@@ -27,6 +27,8 @@ interface Application {
 const STATUS_META: Record<string, { label: string; color: string; icon: React.ElementType }> = {
   draft: { label: "Draft", color: "text-gray-500 bg-gray-50", icon: FileText },
   ready_to_submit: { label: "Ready", color: "text-blue-700 bg-blue-50", icon: FileText },
+  tailoring_resume: { label: "Tailoring resume...", color: "text-yellow-700 bg-yellow-50", icon: Clock },
+  writing_cover_letter: { label: "Writing cover letter...", color: "text-yellow-700 bg-yellow-50", icon: Clock },
   submitting: { label: "Submitting...", color: "text-yellow-700 bg-yellow-50", icon: Clock },
   submitted: { label: "Submitted", color: "text-green-700 bg-green-50", icon: CheckCircle },
   submit_failed: { label: "Failed", color: "text-red-700 bg-red-50", icon: XCircle },
