@@ -25,14 +25,14 @@ interface Application {
 }
 
 const STATUS_META: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  draft: { label: "Draft", color: "text-gray-500 bg-gray-50", icon: FileText },
-  ready_to_submit: { label: "Ready", color: "text-blue-700 bg-blue-50", icon: FileText },
-  tailoring_resume: { label: "Tailoring resume...", color: "text-yellow-700 bg-yellow-50", icon: Clock },
-  writing_cover_letter: { label: "Writing cover letter...", color: "text-yellow-700 bg-yellow-50", icon: Clock },
-  submitting: { label: "Submitting...", color: "text-yellow-700 bg-yellow-50", icon: Clock },
-  submitted: { label: "Submitted", color: "text-green-700 bg-green-50", icon: CheckCircle },
-  submit_failed: { label: "Failed", color: "text-red-700 bg-red-50", icon: XCircle },
-  withdrawn: { label: "Withdrawn", color: "text-gray-400 bg-gray-50", icon: AlertCircle },
+  draft:                { label: "Draft",                    color: "text-gray-500 bg-gray-50",    icon: FileText },
+  tailoring_resume:     { label: "Tailoring resume…",        color: "text-yellow-700 bg-yellow-50", icon: Clock },
+  writing_cover_letter: { label: "Writing cover letter…",    color: "text-yellow-700 bg-yellow-50", icon: Clock },
+  ready_to_submit:      { label: "Waiting for local agent",  color: "text-blue-700 bg-blue-50",    icon: Send },
+  submitting:           { label: "Submitting…",              color: "text-yellow-700 bg-yellow-50", icon: Clock },
+  submitted:            { label: "Submitted ✓",              color: "text-green-700 bg-green-50",  icon: CheckCircle },
+  submit_failed:        { label: "Failed",                   color: "text-red-700 bg-red-50",      icon: XCircle },
+  withdrawn:            { label: "Withdrawn",                color: "text-gray-400 bg-gray-50",    icon: AlertCircle },
 };
 
 type Filter = "all" | "needs_action" | "active" | "closed";
@@ -76,12 +76,32 @@ export default function ApplicationsPage() {
     );
   }
 
+  const readyCount = applications.filter((a) => a.status === "ready_to_submit").length;
+
   return (
     <div className="max-w-2xl mx-auto space-y-4">
       <div className="flex items-center justify-between mb-2">
         <h1 className="text-2xl font-bold text-gray-900">Applications</h1>
         <span className="text-sm text-gray-500">{applications.length} total</span>
       </div>
+
+      {/* Local agent banner */}
+      {readyCount > 0 && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 flex gap-3 items-start">
+          <Send size={16} className="text-blue-600 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-blue-900">
+              {readyCount} application{readyCount > 1 ? "s" : ""} ready to submit
+            </p>
+            <p className="text-xs text-blue-700 mt-0.5">
+              The resume & cover letter are generated. Start the local agent on your computer to open a browser and submit automatically.
+            </p>
+            <code className="mt-1.5 block text-[11px] bg-blue-100 text-blue-800 rounded px-2 py-1 font-mono">
+              cd apps/api &amp;&amp; python -m app.agent.local_runner
+            </code>
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-2 flex-wrap mb-4">
         {(["all", "needs_action", "active", "closed"] as Filter[]).map((f) => (
