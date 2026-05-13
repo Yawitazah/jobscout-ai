@@ -74,6 +74,7 @@ export default function ApplicationDetailPage({
   const [submitting, setSubmitting] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [showAgentCmd, setShowAgentCmd] = useState(false);
+  const [userId, setUserId] = useState<string>("");
 
   useEffect(() => {
     fetch(`/api/applications/${id}`)
@@ -81,6 +82,14 @@ export default function ApplicationDetailPage({
       .then(setApp)
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Fetch current user ID for the local agent command
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user?.id) setUserId(data.user.id);
+    });
+  }, []);
 
   // Realtime status subscription
   useEffect(() => {
@@ -213,13 +222,37 @@ export default function ApplicationDetailPage({
 
       {/* Local agent command panel */}
       {showAgentCmd && app.status === "ready_to_submit" && hasDocs && (
-        <div className="bg-slate-900 text-slate-100 rounded-xl p-4 space-y-2 text-xs font-mono">
-          <p className="text-slate-400 font-sans font-medium text-[11px] uppercase tracking-wider">Run the local agent on your machine</p>
-          <p className="text-slate-300 font-sans text-xs mb-2">The local agent opens a real browser and submits the application on your behalf using Claude computer use.</p>
-          <div className="bg-slate-800 rounded-lg px-3 py-2 select-all text-green-400">
-            cd apps/api && python -m app.agent.local_runner
+        <div className="bg-slate-900 text-slate-100 rounded-xl p-4 space-y-3 text-xs">
+          <p className="text-slate-400 font-sans font-semibold text-[11px] uppercase tracking-wider">Run the local agent on your machine</p>
+          <p className="text-slate-300 font-sans">The agent opens a real browser on <em>your computer</em> and submits the application using Claude. It does not run in the cloud.</p>
+
+          <div className="space-y-1">
+            <p className="text-slate-500 font-sans text-[11px] uppercase tracking-wider">1 · One-time setup</p>
+            <div className="bg-slate-800 rounded-lg px-3 py-2 font-mono text-green-400 leading-relaxed">
+              <div>cd apps/api</div>
+              <div>pip install -e ".[dev]"</div>
+              <div>playwright install chromium</div>
+            </div>
           </div>
-          <p className="text-slate-500 font-sans text-[11px]">Make sure your <code className="text-slate-300">.env</code> has <code className="text-slate-300">SUPABASE_URL</code>, <code className="text-slate-300">SUPABASE_SERVICE_ROLE_KEY</code>, and <code className="text-slate-300">ANTHROPIC_API_KEY</code> set before running.</p>
+
+          <div className="space-y-1">
+            <p className="text-slate-500 font-sans text-[11px] uppercase tracking-wider">2 · Set env vars in your shell</p>
+            <div className="bg-slate-800 rounded-lg px-3 py-2 font-mono text-green-400 leading-relaxed">
+              <div>export SUPABASE_URL=<span className="text-slate-400">https://fkqordxuorvvmupfrxcp.supabase.co</span></div>
+              <div>export SUPABASE_SERVICE_ROLE_KEY=<span className="text-slate-400">(from .env)</span></div>
+              <div>export ANTHROPIC_API_KEY=<span className="text-slate-400">(from .env)</span></div>
+              <div>export AGENT_USER_ID=<span className="text-yellow-300">{userId || "loading…"}</span></div>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <p className="text-slate-500 font-sans text-[11px] uppercase tracking-wider">3 · Run</p>
+            <div className="bg-slate-800 rounded-lg px-3 py-2 font-mono text-green-400 select-all">
+              python -m app.agent.local_runner
+            </div>
+          </div>
+
+          <p className="text-slate-500 font-sans text-[11px]">The agent polls every 30 s for applications with status <span className="text-slate-300">ready_to_submit</span>, then opens a browser window and fills the form. Leave it running while you have pending applications.</p>
         </div>
       )}
 
