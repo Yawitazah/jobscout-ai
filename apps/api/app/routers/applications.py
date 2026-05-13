@@ -60,7 +60,12 @@ async def start_application(
         current_status = app_data["status"]
         if current_status in ("submitting", "submitted"):
             return StartApplicationResponse(application_id=application_id, status=current_status)
-        supabase.table("applications").update({"status": "draft", "updated_at": now}).eq("id", application_id).execute()
+        supabase.table("applications").update({
+            "status": "draft",
+            "resume_doc_id": None,
+            "cover_letter_doc_id": None,
+            "updated_at": now,
+        }).eq("id", application_id).execute()
     else:
         result = supabase.table("applications").insert({
             "user_id": user["id"],
