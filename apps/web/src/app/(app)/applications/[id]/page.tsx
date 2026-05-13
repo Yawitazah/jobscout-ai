@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { use } from "react";
-import { ArrowLeft, Download, Send, CheckCircle, XCircle, Clock, AlertCircle, ExternalLink, Mail, Calendar, FileText, Info } from "lucide-react";
+import { ArrowLeft, Download, Send, CheckCircle, XCircle, Clock, AlertCircle, ExternalLink, Mail, Calendar, FileText, Info, RefreshCw, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
@@ -51,12 +51,15 @@ interface ApplicationDetail {
 type Tab = "resume" | "cover_letter" | "submission" | "timeline";
 
 const STATUS_META: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  draft: { label: "Draft", color: "text-gray-500", icon: AlertCircle },
-  ready_to_submit: { label: "Ready to submit", color: "text-blue-600", icon: CheckCircle },
-  submitting: { label: "Submitting...", color: "text-yellow-600", icon: Clock },
-  submitted: { label: "Submitted", color: "text-green-600", icon: CheckCircle },
-  submit_failed: { label: "Submission failed", color: "text-red-600", icon: XCircle },
-  withdrawn: { label: "Withdrawn", color: "text-gray-400", icon: AlertCircle },
+  draft:                { label: "Draft",                   color: "text-gray-500",   icon: AlertCircle  },
+  queued:               { label: "Queued",                  color: "text-gray-500",   icon: Clock        },
+  tailoring_resume:     { label: "Tailoring resume…",       color: "text-yellow-600", icon: Clock        },
+  writing_cover_letter: { label: "Writing cover letter…",   color: "text-yellow-600", icon: Clock        },
+  ready_to_submit:      { label: "Ready to submit",         color: "text-blue-600",   icon: CheckCircle  },
+  submitting:           { label: "Submitting…",             color: "text-yellow-600", icon: Clock        },
+  submitted:            { label: "Submitted ✓",             color: "text-green-600",  icon: CheckCircle  },
+  submit_failed:        { label: "Submission failed",       color: "text-red-600",    icon: XCircle      },
+  withdrawn:            { label: "Withdrawn",               color: "text-gray-400",   icon: AlertCircle  },
 };
 
 export default function ApplicationDetailPage({
@@ -69,6 +72,7 @@ export default function ApplicationDetailPage({
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("resume");
   const [submitting, setSubmitting] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   useEffect(() => {
     fetch(`/api/applications/${id}`)
@@ -115,6 +119,23 @@ export default function ApplicationDetailPage({
     }
   }
 
+  async function triggerRegenerate() {
+    if (!app?.user_job?.id) return;
+    setRegenerating(true);
+    try {
+      const res = await fetch(`/api/applications/start/${app.user_job.id}`, { method: "POST" });
+      const data = await res.json();
+      if (data.status) {
+        setApp((prev) => prev ? { ...prev, status: data.status } : prev);
+      }
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
+  const inProgress = ["tailoring_resume", "writing_cover_letter", "submitting"].includes(app?.status ?? "");
+  const hasDocs = !!(app?.resume || app?.cover_letter);
+
   if (loading) {
     return <div className="text-center text-gray-400 py-20 text-sm">Loading...</div>;
   }
@@ -147,22 +168,40 @@ export default function ApplicationDetailPage({
       {/* Status bar */}
       <div className="flex items-center justify-between border border-gray-100 rounded-xl px-4 py-3">
         <div className={`flex items-center gap-2 text-sm font-medium ${meta.color}`}>
-          <Icon size={15} />
+          {inProgress ? <Loader2 size={15} className="animate-spin" /> : <Icon size={15} />}
           {meta.label}
         </div>
-        {(app.status === "draft" || app.status === "ready_to_submit" || app.status === "submit_failed") && (
-          <button
-            onClick={triggerSubmit}
-            disabled={submitting}
-            className="flex items-center gap-1.5 text-xs font-medium text-white bg-[#1A2B4C] px-3 py-1.5 rounded-[6px] hover:bg-[#243660] disabled:opacity-60"
-          >
-            <Send size={12} />
-            {submitting ? "Starting..." : "Submit application"}
-          </button>
-        )}
-        {app.status === "submitted" && app.confirmation_number && (
-          <span className="text-xs text-gray-500">Ref: {app.confirmation_number}</span>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Regenerate docs when ready but no docs generated (e.g. API credits were missing) */}
+          {app.status === "ready_to_submit" && !hasDocs && (
+            <button
+              onClick={triggerRegenerate}
+              disabled={regenerating}
+              className="flex items-center gap-1.5 text-xs font-medium border border-[#1A2B4C] text-[#1A2B4C] px-3 py-1.5 rounded-[6px] hover:bg-blue-50 disabled:opacity-60"
+            >
+              {regenerating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+              {regenerating ? "Generating…" : "Regenerate Docs"}
+            </button>
+          )}
+          {/* Submit / retry pipeline */}
+          {(app.status === "draft" || app.status === "submit_failed") && (
+            <button
+              onClick={triggerSubmit}
+              disabled={submitting}
+              className="flex items-center gap-1.5 text-xs font-medium text-white bg-[#1A2B4C] px-3 py-1.5 rounded-[6px] hover:bg-[#243660] disabled:opacity-60"
+            >
+              {submitting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+              {submitting ? "Starting…" : "Start Pipeline"}
+            </button>
+          )}
+          {/* Docs ready — remind user to run local agent */}
+          {app.status === "ready_to_submit" && hasDocs && (
+            <span className="text-xs text-blue-600 font-medium">Run local agent to submit ↗</span>
+          )}
+          {app.status === "submitted" && app.confirmation_number && (
+            <span className="text-xs text-gray-500">Ref: {app.confirmation_number}</span>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
@@ -183,22 +222,42 @@ export default function ApplicationDetailPage({
       </div>
 
       {/* Tab content */}
-      {tab === "resume" && <ResumeTab app={app} />}
-      {tab === "cover_letter" && <CoverLetterTab app={app} />}
+      {tab === "resume" && <ResumeTab app={app} onRegenerate={triggerRegenerate} />}
+      {tab === "cover_letter" && <CoverLetterTab app={app} onRegenerate={triggerRegenerate} />}
       {tab === "submission" && <SubmissionTab app={app} />}
       {tab === "timeline" && <TimelineTab applicationId={id} />}
     </div>
   );
 }
 
-function ResumeTab({ app }: { app: ApplicationDetail }) {
+function ResumeTab({ app, onRegenerate }: { app: ApplicationDetail; onRegenerate?: () => void }) {
   const resume = app.resume;
   const userJobId = app.user_job?.id;
+  const isGenerating = ["tailoring_resume", "writing_cover_letter"].includes(app.status);
 
   if (!resume) {
     return (
       <div className="text-center text-gray-400 py-10 text-sm space-y-3">
-        <p>No resume generated yet.</p>
+        {isGenerating ? (
+          <div className="flex flex-col items-center gap-2">
+            <Loader2 size={20} className="animate-spin text-yellow-500" />
+            <p className="text-yellow-600 font-medium">Tailoring your resume with AI…</p>
+            <p className="text-xs text-gray-400">This usually takes 30–60 seconds.</p>
+          </div>
+        ) : (
+          <>
+            <FileText size={28} className="mx-auto text-gray-300" />
+            <p>No resume generated yet.</p>
+            {app.status === "ready_to_submit" && onRegenerate && (
+              <button
+                onClick={onRegenerate}
+                className="mx-auto flex items-center gap-1.5 text-xs font-medium border border-[#1A2B4C] text-[#1A2B4C] px-3 py-1.5 rounded-lg hover:bg-blue-50"
+              >
+                <RefreshCw size={11} /> Regenerate Docs
+              </button>
+            )}
+          </>
+        )}
       </div>
     );
   }
@@ -252,13 +311,33 @@ function ResumeTab({ app }: { app: ApplicationDetail }) {
   );
 }
 
-function CoverLetterTab({ app }: { app: ApplicationDetail }) {
+function CoverLetterTab({ app, onRegenerate }: { app: ApplicationDetail; onRegenerate?: () => void }) {
   const cl = app.cover_letter;
+  const isGenerating = ["tailoring_resume", "writing_cover_letter"].includes(app.status);
 
   if (!cl) {
     return (
-      <div className="text-center text-gray-400 py-10 text-sm">
-        <p>No cover letter generated yet.</p>
+      <div className="text-center text-gray-400 py-10 text-sm space-y-3">
+        {isGenerating ? (
+          <div className="flex flex-col items-center gap-2">
+            <Loader2 size={20} className="animate-spin text-yellow-500" />
+            <p className="text-yellow-600 font-medium">Writing your cover letter…</p>
+            <p className="text-xs text-gray-400">Almost done.</p>
+          </div>
+        ) : (
+          <>
+            <Mail size={28} className="mx-auto text-gray-300" />
+            <p>No cover letter generated yet.</p>
+            {app.status === "ready_to_submit" && onRegenerate && (
+              <button
+                onClick={onRegenerate}
+                className="mx-auto flex items-center gap-1.5 text-xs font-medium border border-[#1A2B4C] text-[#1A2B4C] px-3 py-1.5 rounded-lg hover:bg-blue-50"
+              >
+                <RefreshCw size={11} /> Regenerate Docs
+              </button>
+            )}
+          </>
+        )}
       </div>
     );
   }

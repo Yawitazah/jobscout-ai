@@ -11,6 +11,7 @@ import {
   AlertCircle,
   Play,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 
@@ -273,6 +274,21 @@ export default function ApplicationsPage() {
                         <><Loader2 size={11} className="animate-spin" /> Starting…</>
                       ) : (
                         <><Play size={11} /> {app ? "Retry" : "Start Application"}</>
+                      )}
+                    </button>
+                  )}
+
+                  {/* Regenerate docs when ready_to_submit but no docs yet */}
+                  {status === "ready_to_submit" && !hasResume && !hasCoverLetter && (
+                    <button
+                      onClick={() => startApplication(item.user_job_id)}
+                      disabled={starting === item.user_job_id}
+                      className="flex items-center gap-1.5 text-xs font-medium border border-[#1A2B4C] text-[#1A2B4C] px-3 py-1.5 rounded-lg hover:bg-blue-50 disabled:opacity-60 transition-colors"
+                    >
+                      {starting === item.user_job_id ? (
+                        <><Loader2 size={11} className="animate-spin" /> Generating…</>
+                      ) : (
+                        <><RefreshCw size={11} /> Regenerate Docs</>
                       )}
                     </button>
                   )}
