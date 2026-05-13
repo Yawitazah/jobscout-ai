@@ -12,23 +12,140 @@ function getAdmin() {
   );
 }
 
-const SYSTEM_PROMPT = `You are Scout — a dedicated AI job search agent inside JobScout AI. You act like a sharp, experienced recruiter who is entirely on the user's side.
+// ─── Load user context from DB ────────────────────────────────────────────────
 
-Your goals:
-1. Have a real conversation to understand exactly what they want: role title, seniority level, industry, company size, remote/hybrid/onsite preference, location, salary range, culture fit, what they're moving away from and toward.
-2. Ask smart follow-up questions — don't assume, dig in. One or two questions at a time.
-3. Before searching, confirm your understanding clearly:
-   "Here's what I'll be searching for: [specific criteria list]. Ready to start?"
-4. Use the web_search tool to find REAL, CURRENT job openings. Search multiple queries — different phrasings, job boards (LinkedIn, Indeed, Glassdoor, company career pages).
-5. Use add_jobs_to_queue to save quality matches. Be selective — only add roles that genuinely fit.
-6. After adding jobs, tell the user:
-   - "I added [N] matches to your queue."
-   - "Top pick: [Job title] at [Company] — [1-2 sentences on the specific fit]."
-   - What you're continuing to research.
+async function loadUserContext(userId: string): Promise<string> {
+  const admin = getAdmin();
 
-You remember everything from prior conversations. Reference past preferences naturally.
-Be direct, confident, and specific. No fluff. Quality over quantity.
-Today's date: ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}.`;
+  const [profileRes, prefsRes, resumeRes] = await Promise.all([
+    admin
+      .from("profiles")
+      .select("full_name, email, phone, location, summary, skills, experience, education")
+      .eq("id", userId)
+      .maybeSingle(),
+    admin
+      .from("preferences")
+      .select("target_titles, target_locations, work_modes, salary_min, salary_max, industries, deal_breakers, automation_level")
+      .eq("user_id", userId)
+      .maybeSingle(),
+    admin
+      .from("resume_uploads")
+      .select("extracted_text, original_filename")
+      .eq("user_id", userId)
+      .eq("status", "done")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const profile = profileRes.data;
+  const prefs = prefsRes.data;
+  const resume = resumeRes.data;
+
+  const lines: string[] = ["=== WHAT YOU KNOW ABOUT THIS USER ===", ""];
+
+  // Profile
+  if (profile) {
+    if (profile.full_name) lines.push(`Name: ${profile.full_name}`);
+    if (profile.email) lines.push(`Email: ${profile.email}`);
+    if (profile.location) lines.push(`Location: ${profile.location}`);
+    if (profile.phone) lines.push(`Phone: ${profile.phone}`);
+    if (profile.summary) {
+      lines.push("", `Professional Summary: ${profile.summary}`);
+    }
+    if (Array.isArray(profile.skills) && profile.skills.length > 0) {
+      lines.push("", `Skills: ${profile.skills.join(", ")}`);
+    }
+
+    // Experience
+    if (Array.isArray(profile.experience) && profile.experience.length > 0) {
+      lines.push("", "Work Experience:");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const exp of profile.experience as any[]) {
+        const range = [exp.start_date, exp.end_date ?? "Present"].filter(Boolean).join(" – ");
+        lines.push(`  - ${exp.title} at ${exp.company}${range ? ` (${range})` : ""}`);
+        if (exp.description) lines.push(`    ${exp.description}`);
+      }
+    }
+
+    // Education
+    if (Array.isArray(profile.education) && profile.education.length > 0) {
+      lines.push("", "Education:");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const edu of profile.education as any[]) {
+        const range = [edu.start_date, edu.end_date ?? "Present"].filter(Boolean).join(" – ");
+        lines.push(`  - ${edu.degree ?? "Degree"} from ${edu.institution}${range ? ` (${range})` : ""}`);
+      }
+    }
+  }
+
+  // Preferences
+  if (prefs) {
+    lines.push("", "Job Search Preferences:");
+    if (Array.isArray(prefs.target_titles) && prefs.target_titles.length > 0) {
+      lines.push(`  Target roles: ${prefs.target_titles.join(", ")}`);
+    }
+    if (Array.isArray(prefs.work_modes) && prefs.work_modes.length > 0) {
+      lines.push(`  Work modes: ${prefs.work_modes.join(", ")}`);
+    }
+    if (prefs.target_locations) {
+      const locs = Array.isArray(prefs.target_locations)
+        ? prefs.target_locations.join(", ")
+        : JSON.stringify(prefs.target_locations);
+      lines.push(`  Target locations: ${locs}`);
+    }
+    if (prefs.salary_min || prefs.salary_max) {
+      const min = prefs.salary_min ? `$${Number(prefs.salary_min).toLocaleString()}` : "any";
+      const max = prefs.salary_max ? `$${Number(prefs.salary_max).toLocaleString()}` : "any";
+      lines.push(`  Salary range: ${min} – ${max}`);
+    }
+    if (Array.isArray(prefs.industries) && prefs.industries.length > 0) {
+      lines.push(`  Industries: ${prefs.industries.join(", ")}`);
+    }
+    if (prefs.deal_breakers && Object.keys(prefs.deal_breakers).length > 0) {
+      lines.push(`  Deal breakers: ${JSON.stringify(prefs.deal_breakers)}`);
+    }
+  }
+
+  // Resume
+  if (resume?.extracted_text) {
+    const truncated = resume.extracted_text.slice(0, 3000);
+    lines.push("", `Resume (${resume.original_filename}):`, truncated);
+    if (resume.extracted_text.length > 3000) lines.push("[...truncated for brevity]");
+  }
+
+  lines.push("", "=== END USER CONTEXT ===");
+  return lines.join("\n");
+}
+
+// ─── System prompt ────────────────────────────────────────────────────────────
+
+function buildSystemPrompt(userContext: string): string {
+  return `You are Scout — a sharp, dedicated AI job search agent inside JobScout AI. You work exclusively for this user and have their back completely.
+
+${userContext}
+
+CORE RULES — NEVER BREAK THESE:
+- You already know everything about this user from their profile above. Never ask them to repeat info you already have.
+- Never use markdown symbols in your responses. No asterisks (**), no dashes (---), no pound signs (#). Write in clean, natural prose. Use line breaks to separate thoughts.
+- Be direct and specific. No fluff, no filler. Quality over quantity.
+- When you reference past preferences or profile details, do it naturally — "Based on your background in..." or "Since you prefer remote roles..."
+- Today's date: ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}.
+
+YOUR JOB SEARCH PROCESS:
+1. Understand any refinements or new direction from the user — but do NOT ask for info you already know from their profile.
+2. When you have enough to search, confirm briefly: "I'll search for [criteria]. Starting now."
+3. Use web_search to find real, current job openings. Run multiple searches with different phrasings and job boards (LinkedIn, Indeed, Glassdoor, company career pages).
+4. Use add_jobs_to_queue to save strong matches. Be selective — only roles that genuinely fit this user's background and preferences.
+5. After adding jobs, tell the user: how many you added, your top pick and why it stands out, and what you're continuing to explore.
+
+UPDATING PREFERENCES:
+If the user asks to change or update their search preferences, confirm what they want to change, then call update_preferences to save it. Say something like "Got it, I've updated your preferences to reflect that."
+
+You remember everything from prior conversations. Reference past context naturally. Be their best recruiter.`;
+}
+
+// ─── Tools ────────────────────────────────────────────────────────────────────
 
 const ADD_JOBS_TOOL: Anthropic.Tool = {
   name: "add_jobs_to_queue",
@@ -57,6 +174,44 @@ const ADD_JOBS_TOOL: Anthropic.Tool = {
   },
 };
 
+const UPDATE_PREFERENCES_TOOL: Anthropic.Tool = {
+  name: "update_preferences",
+  description: "Update the user's saved job search preferences after they have approved the changes in conversation. Only call this when the user explicitly asks to update or change their preferences.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      target_titles: {
+        type: "array",
+        items: { type: "string" },
+        description: "Job titles/roles they're targeting",
+      },
+      target_locations: {
+        type: "array",
+        items: { type: "string" },
+        description: "Preferred locations (city names or 'Remote')",
+      },
+      work_modes: {
+        type: "array",
+        items: { type: "string", enum: ["remote", "hybrid", "onsite"] },
+        description: "Preferred work arrangements",
+      },
+      salary_min: { type: "number", description: "Minimum acceptable annual salary in USD" },
+      salary_max: { type: "number", description: "Maximum expected annual salary in USD" },
+      industries: {
+        type: "array",
+        items: { type: "string" },
+        description: "Preferred industries",
+      },
+      summary: {
+        type: "string",
+        description: "Brief summary of what was changed, to confirm back to the user",
+      },
+    },
+  },
+};
+
+// ─── Tool handlers ────────────────────────────────────────────────────────────
+
 async function handleAddJobs(
   jobs: Array<{ title: string; company: string; url: string; location: string; description: string; why_good_match: string }>,
   userId: string
@@ -66,7 +221,6 @@ async function handleAddJobs(
 
   for (const job of jobs) {
     try {
-      // Upsert company
       const { data: companyData } = await admin
         .from("companies")
         .upsert(
@@ -78,7 +232,6 @@ async function handleAddJobs(
 
       const companyId = companyData?.id ?? null;
 
-      // Upsert job
       const { data: jobData } = await admin
         .from("jobs")
         .upsert(
@@ -89,7 +242,7 @@ async function handleAddJobs(
             source_url: job.url,
             title: job.title,
             location: job.location,
-            description: `${job.description}\n\n**Why this matches you:** ${job.why_good_match}`,
+            description: `${job.description}\n\nWhy this matches you: ${job.why_good_match}`,
             is_active: true,
             last_seen_at: new Date().toISOString(),
           },
@@ -100,7 +253,6 @@ async function handleAddJobs(
 
       if (!jobData?.id) continue;
 
-      // Add to user_jobs if not already there
       const { data: existing } = await admin
         .from("user_jobs")
         .select("id")
@@ -126,6 +278,39 @@ async function handleAddJobs(
   return `Successfully added ${added} job${added !== 1 ? "s" : ""} to the queue.`;
 }
 
+async function handleUpdatePreferences(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  input: Record<string, any>,
+  userId: string
+): Promise<string> {
+  const admin = getAdmin();
+  const { summary, ...fields } = input;
+
+  // Build the patch — only include fields that were provided
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const patch: Record<string, any> = {};
+
+  if (Array.isArray(fields.target_titles)) patch.target_titles = fields.target_titles;
+  if (Array.isArray(fields.target_locations)) patch.target_locations = fields.target_locations;
+  if (Array.isArray(fields.work_modes)) patch.work_modes = fields.work_modes;
+  if (typeof fields.salary_min === "number") patch.salary_min = fields.salary_min;
+  if (typeof fields.salary_max === "number") patch.salary_max = fields.salary_max;
+  if (Array.isArray(fields.industries)) patch.industries = fields.industries;
+
+  if (Object.keys(patch).length === 0) {
+    return "No preference fields to update.";
+  }
+
+  const { error } = await admin
+    .from("preferences")
+    .upsert({ user_id: userId, ...patch }, { onConflict: "user_id" });
+
+  if (error) return `Failed to update preferences: ${error.message}`;
+  return summary ? `Preferences updated: ${summary}` : "Preferences updated successfully.";
+}
+
+// ─── Route handler ────────────────────────────────────────────────────────────
+
 type Params = { params: Promise<{ id: string }> };
 
 export async function POST(req: NextRequest, { params }: Params) {
@@ -146,24 +331,30 @@ export async function POST(req: NextRequest, { params }: Params) {
     .single();
   if (!convo) return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
 
-  // Save user message
   const admin = getAdmin();
+
+  // Save user message
   await admin.from("scout_messages").insert({ conversation_id: id, role: "user", content: message });
 
-  // Auto-title the conversation from first user message
+  // Auto-title from first user message
   if (convo.title === "New conversation") {
     const shortTitle = message.slice(0, 60).trim();
     await admin.from("scout_conversations").update({ title: shortTitle }).eq("id", id);
   }
 
-  // Load conversation history
-  const { data: history } = await admin
-    .from("scout_messages")
-    .select("role, content")
-    .eq("conversation_id", id)
-    .order("created_at", { ascending: true });
+  // Load conversation history + user context in parallel
+  const [historyRes, userContext] = await Promise.all([
+    admin
+      .from("scout_messages")
+      .select("role, content")
+      .eq("conversation_id", id)
+      .order("created_at", { ascending: true }),
+    loadUserContext(user.id),
+  ]);
 
-  const messages: Anthropic.MessageParam[] = (history ?? []).map((m) => ({
+  const systemPrompt = buildSystemPrompt(userContext);
+
+  const messages: Anthropic.MessageParam[] = (historyRes.data ?? []).map((m) => ({
     role: m.role as "user" | "assistant",
     content: m.content,
   }));
@@ -181,19 +372,18 @@ export async function POST(req: NextRequest, { params }: Params) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const currentMessages: any[] = [...messages];
 
-        // Agentic loop: keep going until end_turn (handles tool use)
         while (true) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const tools: any[] = [
             { type: "web_search_20250305", name: "web_search" },
             ADD_JOBS_TOOL,
+            UPDATE_PREFERENCES_TOOL,
           ];
 
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const apiStream = ai.messages.stream({
             model: "claude-sonnet-4-5",
             max_tokens: 8192,
-            system: SYSTEM_PROMPT,
+            system: systemPrompt,
             tools,
             messages: currentMessages,
           } as Parameters<typeof ai.messages.stream>[0]);
@@ -224,12 +414,10 @@ export async function POST(req: NextRequest, { params }: Params) {
             }
           }
 
-          // Parse tool use blocks
+          // Parse tool inputs
           for (const block of contentBlocks) {
             if (block.type === "tool_use") {
-              try {
-                block.input = JSON.parse(block.inputRaw ?? "{}");
-              } catch { block.input = {}; }
+              try { block.input = JSON.parse(block.inputRaw ?? "{}"); } catch { block.input = {}; }
               toolUseBlocks.push(block as Anthropic.ToolUseBlock);
             }
           }
@@ -243,15 +431,21 @@ export async function POST(req: NextRequest, { params }: Params) {
           const toolResults: any[] = [];
           for (const toolUse of toolUseBlocks) {
             let result = "";
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const input = toolUse.input as Record<string, any>;
+
             if (toolUse.name === "add_jobs_to_queue") {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const jobs = (toolUse.input as any).jobs ?? [];
-              send({ type: "status", text: `Adding ${jobs.length} jobs to your queue…` });
+              const jobs = input.jobs ?? [];
+              send({ type: "status", text: `Adding ${jobs.length} job${jobs.length !== 1 ? "s" : ""} to your queue...` });
               result = await handleAddJobs(jobs, user.id);
               send({ type: "status", text: result });
+            } else if (toolUse.name === "update_preferences") {
+              send({ type: "status", text: "Updating your preferences..." });
+              result = await handleUpdatePreferences(input, user.id);
             } else if (toolUse.name === "web_search") {
               result = "Search completed.";
             }
+
             toolResults.push({ type: "tool_result", tool_use_id: toolUse.id, content: result });
           }
           currentMessages.push({ role: "user", content: toolResults });
