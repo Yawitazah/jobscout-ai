@@ -18,6 +18,7 @@ interface ApplicationDetail {
   submitted_at: string | null;
   created_at: string;
   updated_at: string;
+  missing_questions: string[] | null;
   user_job: {
     id: string;
     score: number;
@@ -59,6 +60,7 @@ const STATUS_META: Record<string, { label: string; color: string; icon: React.El
   submitting:           { label: "Submitting…",             color: "text-yellow-600", icon: Clock        },
   submitted:            { label: "Submitted ✓",             color: "text-green-600",  icon: CheckCircle  },
   submit_failed:        { label: "Submission failed",       color: "text-red-600",    icon: XCircle      },
+  more_info_needed:     { label: "More information needed", color: "text-amber-600",  icon: AlertCircle  },
   withdrawn:            { label: "Withdrawn",               color: "text-gray-400",   icon: AlertCircle  },
 };
 
@@ -196,6 +198,16 @@ export default function ApplicationDetailPage({
               {submitting ? "Starting…" : "Start Pipeline"}
             </button>
           )}
+          {/* More info needed — open Scout to provide details */}
+          {app.status === "more_info_needed" && (
+            <Link
+              href={`/scout?applicationId=${app.id}`}
+              className="flex items-center gap-1.5 text-xs font-medium text-white bg-amber-500 hover:bg-amber-600 px-3 py-1.5 rounded-[6px]"
+            >
+              <Mail size={12} />
+              Provide Details
+            </Link>
+          )}
           {/* Docs ready — show local agent command */}
           {app.status === "ready_to_submit" && hasDocs && (
             <button
@@ -210,6 +222,31 @@ export default function ApplicationDetailPage({
           )}
         </div>
       </div>
+
+      {/* More information needed panel */}
+      {app.status === "more_info_needed" && (app.missing_questions?.length ?? 0) > 0 && (
+        <div className="border border-amber-200 bg-amber-50 rounded-xl p-4 space-y-3">
+          <p className="text-sm font-semibold text-amber-800">The agent paused — it needs answers to continue</p>
+          <ul className="space-y-1.5">
+            {(app.missing_questions ?? []).map((q, i) => {
+              const label = q.includes("|") ? q.split("|").slice(1).join("|").trim() : q;
+              return (
+                <li key={i} className="flex items-start gap-2 text-sm text-amber-900">
+                  <span className="mt-0.5 flex-shrink-0 w-4 h-4 rounded-full bg-amber-200 text-amber-800 text-[10px] flex items-center justify-center font-bold">{i + 1}</span>
+                  {label}
+                </li>
+              );
+            })}
+          </ul>
+          <Link
+            href={`/scout?applicationId=${app.id}`}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-white bg-amber-500 hover:bg-amber-600 px-4 py-2 rounded-lg"
+          >
+            <Mail size={12} />
+            Answer these questions in Scout →
+          </Link>
+        </div>
+      )}
 
       {/* Local agent panel */}
       {showAgentCmd && app.status === "ready_to_submit" && hasDocs && (

@@ -244,6 +244,33 @@ const SAVE_MEMORY_TOOL: Anthropic.Tool = {
   },
 };
 
+const ANSWER_APPLICATION_TOOL: Anthropic.Tool = {
+  name: "answer_application_question",
+  description: "Save the user's answer to a specific question the agent needs to submit their job application. Call this once per question, as soon as the user provides the answer. When all questions have been answered, the application will automatically be queued for resubmission.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      application_id: {
+        type: "string",
+        description: "The application ID (provided in context above)",
+      },
+      question_key: {
+        type: "string",
+        description: "Short identifier for the question (e.g. 'years_coding', 'visa_status')",
+      },
+      answer: {
+        type: "string",
+        description: "The user's answer, exactly as they stated it",
+      },
+      all_answered: {
+        type: "boolean",
+        description: "Set to true only when this is the last question and all questions have now been answered",
+      },
+    },
+    required: ["application_id", "question_key", "answer", "all_answered"],
+  },
+};
+
 const UPDATE_PREFERENCES_TOOL: Anthropic.Tool = {
   name: "update_preferences",
   description: "Update the user's saved job search preferences after they have approved the changes in conversation. Only call this when the user explicitly asks to update or change their preferences.",
@@ -393,6 +420,94 @@ async function handleUpdatePreferences(
   return summary ? `Preferences updated: ${summary}` : "Preferences updated successfully.";
 }
 
+// ─── Application context (for "Provide Details" flow) ─────────────────────────
+
+interface AppContext {
+  applicationId: string;
+  jobTitle: string;
+  company: string;
+  missingQuestions: string[];
+}
+
+async function loadApplicationContext(applicationId: string, userId: string): Promise<AppContext | null> {
+  const admin = getAdmin();
+  const { data } = await admin
+    .from("applications")
+    .select("id, missing_questions, user_job:user_jobs(job:jobs(title, company:companies(name)))")
+    .eq("id", applicationId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!data) return null;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const uj = (data as any).user_job;
+  const job = uj?.job;
+  return {
+    applicationId,
+    jobTitle: job?.title ?? "this role",
+    company: job?.company?.name ?? "the company",
+    missingQuestions: (data.missing_questions as string[]) ?? [],
+  };
+}
+
+function buildApplicationSystemPrompt(ctx: AppContext): string {
+  const lines = [
+    `=== APPLICATION DETAILS NEEDED ===`,
+    ``,
+    `The agent tried to submit a job application but stopped because it didn't have all the required information.`,
+    ``,
+    `Job: ${ctx.jobTitle} at ${ctx.company}`,
+    `Application ID: ${ctx.applicationId}`,
+    ``,
+    `Questions the agent couldn't answer:`,
+  ];
+  ctx.missingQuestions.forEach((q, i) => {
+    const label = q.includes("|") ? q.split("|").slice(1).join("|").trim() : q;
+    lines.push(`${i + 1}. ${label}`);
+  });
+  lines.push(
+    ``,
+    `YOUR JOB: Ask the user for each answer in a friendly, conversational way.`,
+    `Call answer_application_question for each answer as you receive it.`,
+    `When all questions are answered (all_answered: true on the last one), tell the user their application is ready and the agent will re-run automatically.`,
+    `Do NOT search for jobs or do anything else — stay focused on getting these answers.`,
+    `=== END APPLICATION CONTEXT ===`,
+  );
+  return lines.join("\n");
+}
+
+async function handleAnswerApplicationQuestion(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  input: Record<string, any>,
+  userId: string,
+): Promise<string> {
+  const admin = getAdmin();
+  const { application_id, question_key, answer, all_answered } = input;
+
+  // Upsert the answer into application_answers
+  const { error } = await admin
+    .from("application_answers")
+    .upsert(
+      { user_id: userId, question_key, answer },
+      { onConflict: "user_id,question_key" }
+    );
+
+  if (error) return `Failed to save answer: ${error.message}`;
+
+  // If all answered, reset application status to ready_to_submit
+  if (all_answered) {
+    await admin
+      .from("applications")
+      .update({ status: "ready_to_submit", missing_questions: [], updated_at: new Date().toISOString() })
+      .eq("id", application_id)
+      .eq("user_id", userId);
+    return `Answer saved. All questions answered — application reset to ready for the agent.`;
+  }
+
+  return `Answer saved for "${question_key}".`;
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 type Params = { params: Promise<{ id: string }> };
@@ -403,7 +518,8 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (authErr || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const { message } = await req.json();
+  const body = await req.json();
+  const { message, applicationId } = body;
   if (!message?.trim()) return NextResponse.json({ error: "Message required" }, { status: 400 });
 
   // Confirm conversation belongs to user
@@ -426,17 +542,20 @@ export async function POST(req: NextRequest, { params }: Params) {
     await admin.from("scout_conversations").update({ title: shortTitle }).eq("id", id);
   }
 
-  // Load conversation history + user context in parallel
-  const [historyRes, userContext] = await Promise.all([
+  // Load conversation history + user context (+ optional application context) in parallel
+  const [historyRes, userContext, appCtx] = await Promise.all([
     admin
       .from("scout_messages")
       .select("role, content")
       .eq("conversation_id", id)
       .order("created_at", { ascending: true }),
     loadUserContext(user.id),
+    applicationId ? loadApplicationContext(applicationId, user.id) : Promise.resolve(null),
   ]);
 
-  const systemPrompt = buildSystemPrompt(userContext);
+  const systemPrompt = appCtx
+    ? buildApplicationSystemPrompt(appCtx) + "\n\n" + buildSystemPrompt(userContext)
+    : buildSystemPrompt(userContext);
 
   const messages: Anthropic.MessageParam[] = (historyRes.data ?? []).map((m) => ({
     role: m.role as "user" | "assistant",
@@ -463,6 +582,7 @@ export async function POST(req: NextRequest, { params }: Params) {
             ADD_JOBS_TOOL,
             UPDATE_PREFERENCES_TOOL,
             SAVE_MEMORY_TOOL,
+            ...(appCtx ? [ANSWER_APPLICATION_TOOL] : []),
           ];
 
           const apiStream = ai.messages.stream({
@@ -493,6 +613,8 @@ export async function POST(req: NextRequest, { params }: Params) {
                   send({ type: "status", text: "Updating your preferences..." });
                 } else if (event.content_block.name === "save_profile_memory") {
                   send({ type: "status", text: "Saving to your profile memory..." });
+                } else if (event.content_block.name === "answer_application_question") {
+                  send({ type: "status", text: "Saving your answer..." });
                 }
               }
             } else if (event.type === "content_block_delta") {
@@ -546,6 +668,10 @@ export async function POST(req: NextRequest, { params }: Params) {
               } else {
                 result = "No content to save.";
               }
+            } else if (toolUse.name === "answer_application_question") {
+              send({ type: "status", text: "Saving your answer..." });
+              result = await handleAnswerApplicationQuestion(input, user.id);
+              send({ type: "status", text: result });
             } else if (toolUse.name === "web_search") {
               result = "Search completed.";
             }

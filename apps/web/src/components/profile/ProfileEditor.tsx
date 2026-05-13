@@ -53,6 +53,7 @@ export interface Profile {
   experience: ExperienceEntry[];
   education: EducationEntry[];
   // Details tab fields
+  resume_email: string | null;
   linkedin_url: string | null;
   github_url: string | null;
   portfolio_url: string | null;
@@ -665,6 +666,20 @@ export function ProfileEditor({ initial, uploads = [], initialMemories = [] }: P
                   value={profile.phone ?? ""}
                   onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
                   placeholder="+1 (555) 000-0000"
+                />
+              </div>
+              <div className="space-y-1 col-span-2">
+                <label className="text-sm font-medium text-gray-700">
+                  Resume email{" "}
+                  <span className="font-normal text-gray-400 text-xs">
+                    — shown on your resume &amp; used in applications (not your login email)
+                  </span>
+                </label>
+                <Input
+                  type="email"
+                  value={profile.resume_email ?? ""}
+                  onChange={(e) => setProfile((p) => ({ ...p, resume_email: e.target.value }))}
+                  placeholder="your.name@gmail.com"
                 />
               </div>
             </div>

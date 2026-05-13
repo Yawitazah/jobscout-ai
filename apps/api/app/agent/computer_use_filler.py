@@ -27,7 +27,7 @@ INTER_ACTION_DELAY = 0.4     # seconds to wait between actions
 
 def _build_system_prompt(profile: dict, job: dict, cover_letter_text: str) -> str:
     full_name = profile.get("full_name") or ""
-    email = profile.get("email") or profile.get("contact_email") or ""
+    email = profile.get("resume_email") or profile.get("email") or profile.get("contact_email") or ""
     phone = profile.get("phone") or ""
     location = profile.get("location") or ""
     linkedin = profile.get("linkedin_url") or ""
@@ -65,6 +65,7 @@ Email     : {email}
 Phone     : {phone}
 Location  : {location}
 LinkedIn  : {linkedin}
+(Use the Email above for ALL email fields — do not use a different address.)
 Summary   : {summary}
 
 Experience:
@@ -101,6 +102,23 @@ RULES
 8. Take a final screenshot and confirm you see a success/confirmation message.
 9. Report the confirmation or reference number if one appears.
 
+10. FILLING TEXT FIELDS — always do this 3-step sequence, never type character-by-character:
+    a. left_click the field to focus it.
+    b. key "ctrl+a" to select all existing text.
+    c. type the value once — it replaces everything instantly.
+
+11. UNKNOWN REQUIRED FIELDS — If you encounter a required (*) field or question
+    for which you have NO information in the candidate data above:
+    - DO NOT guess, invent, or skip it.
+    - STOP the entire application process immediately.
+    - Output EXACTLY one line per unknown field, starting with "MISSING_INFO:":
+        MISSING_INFO: <short_key> | <Full question text exactly as shown on the form>
+    - Then stop — write nothing else.
+    Examples:
+        MISSING_INFO: years_coding | How many years of programming experience do you have?
+        MISSING_INFO: visa_status | Are you legally authorized to work in the United States?
+        MISSING_INFO: salary_expectation | What are your salary expectations?
+
 The viewport is {VIEWPORT_W}×{VIEWPORT_H} px. Use pixel coordinates for clicks."""
 
 
@@ -124,6 +142,7 @@ class ComputerUseFiller:
         self._submitted = False
         self._confirmation: str | None = None
         self._screenshot_bytes: bytes | None = None
+        self._missing_questions: list[str] = []
 
     async def fill(self) -> None:
         """Navigate to the job URL and wait for the page to load."""
@@ -193,13 +212,24 @@ class ComputerUseFiller:
             # Check if Claude finished without a tool call
             if response.stop_reason == "end_turn":
                 for block in response.content:
-                    text = getattr(block, "text", "").lower()
-                    if any(w in text for w in ["submitted", "confirmation", "successfully applied", "application received", "thank you"]):
+                    raw_text = getattr(block, "text", "")
+                    lower_text = raw_text.lower()
+                    # Detect MISSING_INFO lines before checking for success
+                    missing = [
+                        line[len("MISSING_INFO:"):].strip()
+                        for line in raw_text.splitlines()
+                        if line.upper().startswith("MISSING_INFO:")
+                    ]
+                    if missing:
+                        self._missing_questions = missing
+                        logger.info("Claude reported %d missing field(s)", len(missing))
+                        break
+                    if any(w in lower_text for w in ["submitted", "confirmation", "successfully applied", "application received", "thank you"]):
                         self._submitted = True
                         self._screenshot_bytes = await self.page.screenshot(type="png", full_page=False)
-                        # Try to pull a confirmation number from Claude's summary
-                        self._confirmation = _extract_confirmation(getattr(block, "text", ""))
-                logger.info("Claude finished after %d iterations, submitted=%s", iteration + 1, self._submitted)
+                        self._confirmation = _extract_confirmation(raw_text)
+                logger.info("Claude finished after %d iterations, submitted=%s, missing=%s",
+                            iteration + 1, self._submitted, bool(self._missing_questions))
                 break
 
             # Execute tool calls and collect results
@@ -227,6 +257,8 @@ class ComputerUseFiller:
 
         return {
             "submitted": self._submitted,
+            "missing_info": bool(self._missing_questions),
+            "missing_questions": self._missing_questions,
             "confirmation_number": self._confirmation,
             "confirmation_email": None,
             "screenshot_bytes": self._screenshot_bytes,
@@ -284,8 +316,30 @@ class ComputerUseFiller:
 
             elif action == "type":
                 text = tool_input.get("text", "")
-                await self.page.keyboard.type(text, delay=40)
-                return [{"type": "text", "text": f"Typed {len(text)} chars"}]
+                # Fast-fill via JS: set value + fire React-compatible events instantly
+                filled = await self.page.evaluate(
+                    """(text) => {
+                        const el = document.activeElement;
+                        if (!el) return false;
+                        const proto = el instanceof HTMLTextAreaElement
+                            ? HTMLTextAreaElement.prototype
+                            : HTMLInputElement.prototype;
+                        const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+                        if (setter) {
+                            setter.call(el, text);
+                        } else {
+                            el.value = text;
+                        }
+                        el.dispatchEvent(new Event('input',  { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        return true;
+                    }""",
+                    text,
+                )
+                if not filled:
+                    # Fallback: instant keyboard type (no per-character delay)
+                    await self.page.keyboard.type(text, delay=0)
+                return [{"type": "text", "text": f"Filled {len(text)} chars"}]
 
             elif action == "key":
                 key = tool_input.get("text", "")

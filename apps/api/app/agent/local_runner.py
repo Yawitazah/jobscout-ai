@@ -94,6 +94,35 @@ def _mark_failed(supabase, app_id: str, reason: str) -> None:
     logger.error("✗  Application %s failed: %s", app_id, reason)
 
 
+def _mark_more_info_needed(
+    supabase, app_id: str, user_id: str, job_title: str, company_name: str, questions: list[str]
+) -> None:
+    supabase.table("applications").update({
+        "status": "more_info_needed",
+        "missing_questions": questions,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", app_id).execute()
+
+    # Create in-app notification
+    try:
+        q_preview = "; ".join(
+            q.split("|")[-1].strip() for q in questions[:2]
+        )
+        supabase.table("notifications").insert({
+            "user_id": user_id,
+            "event_type": "more_info_needed",
+            "title": "More information needed",
+            "body": f"Agent paused on {job_title} @ {company_name}. Needed: {q_preview}",
+            "action_url": f"/applications/{app_id}",
+            "related_application_id": app_id,
+            "priority": "high",
+        }).execute()
+    except Exception as exc:
+        logger.warning("Could not create notification: %s", exc)
+
+    logger.info("⚠  Application %s needs more info: %s", app_id, questions)
+
+
 async def _upload_screenshot(supabase, png: bytes, user_id: str, app_id: str) -> str | None:
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
     path = f"{user_id}/{app_id}/{ts}_confirmation.png"
@@ -210,6 +239,16 @@ async def process_application(supabase, app: dict) -> None:
             logger.exception("  Filler raised: %s", exc)
             _mark_failed(supabase, app_id, str(exc))
             return
+
+    # ── More information needed ──
+    if result.get("missing_info"):
+        questions = result.get("missing_questions") or []
+        _mark_more_info_needed(
+            supabase, app_id, user_id,
+            job.get("title", "this role"), job.get("company_name", "the company"),
+            questions,
+        )
+        return
 
     # ── Persist result ──
     screenshot_paths: list[str] = []

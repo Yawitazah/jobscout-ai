@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
 
   const allowed = [
-    "full_name", "phone", "location", "summary",
+    "full_name", "phone", "location", "resume_email", "summary",
     "skills", "experience", "education",
     "certifications", "projects", "languages",
     "linkedin_url", "github_url", "portfolio_url",

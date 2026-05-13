@@ -19,6 +19,7 @@ interface Conversation {
 
 interface Props {
   initialConversationId?: string;
+  applicationId?: string;
   onClose?: () => void;
 }
 
@@ -184,7 +185,7 @@ function useVoiceDictation(onTranscript: (text: string) => void) {
 
 // ─── Main shell ───────────────────────────────────────────────────────────────
 
-export function ScoutShell({ initialConversationId, onClose }: Props) {
+export function ScoutShell({ initialConversationId, applicationId, onClose }: Props) {
   const router = useRouter();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(initialConversationId ?? null);
@@ -272,7 +273,7 @@ export function ScoutShell({ initialConversationId, onClose }: Props) {
       const res = await fetch(`/api/scout/conversations/${convId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: text, ...(applicationId ? { applicationId } : {}) }),
       });
 
       if (!res.ok || !res.body) {
