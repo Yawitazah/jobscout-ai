@@ -49,14 +49,15 @@ async def start_application(
         .select("id, status")
         .eq("user_job_id", user_job_id)
         .eq("user_id", user["id"])
-        .maybe_single()
+        .limit(1)
         .execute()
     )
 
     now = datetime.now(timezone.utc).isoformat()
-    if app_row.data:
-        application_id = app_row.data["id"]
-        current_status = app_row.data["status"]
+    app_data = (app_row.data or [])[0] if app_row.data else None
+    if app_data:
+        application_id = app_data["id"]
+        current_status = app_data["status"]
         if current_status in ("submitting", "submitted"):
             return StartApplicationResponse(application_id=application_id, status=current_status)
         supabase.table("applications").update({"status": "draft", "updated_at": now}).eq("id", application_id).execute()
@@ -124,10 +125,11 @@ async def tailor_resume_for_job(
         supabase.table("companies")
         .select("name")
         .eq("id", job.get("company_id", ""))
-        .maybe_single()
+        .limit(1)
         .execute()
     )
-    job["company_name"] = company_row.data["name"] if company_row.data else ""
+    company_data = (company_row.data or [])[0] if company_row.data else None
+    job["company_name"] = company_data["name"] if company_data else ""
 
     profile_row = (
         supabase.table("profiles")
@@ -216,13 +218,14 @@ async def get_resume_for_job(
         .select("resume_doc_id")
         .eq("user_job_id", user_job_id)
         .eq("user_id", user["id"])
-        .maybe_single()
+        .limit(1)
         .execute()
     )
-    if not app_row.data or not app_row.data.get("resume_doc_id"):
+    app_row_data = (app_row.data or [])[0] if app_row.data else None
+    if not app_row_data or not app_row_data.get("resume_doc_id"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No resume generated for this job yet")
 
-    doc_id = app_row.data["resume_doc_id"]
+    doc_id = app_row_data["resume_doc_id"]
     doc_row = (
         supabase.table("generated_documents")
         .select("id, verification_status, verification_notes, content_json, content_text, created_at")
@@ -284,10 +287,11 @@ async def generate_cover_letter_for_job(
         supabase.table("companies")
         .select("name")
         .eq("id", job.get("company_id", ""))
-        .maybe_single()
+        .limit(1)
         .execute()
     )
-    job["company_name"] = company_row.data["name"] if company_row.data else ""
+    company_data2 = (company_row.data or [])[0] if company_row.data else None
+    job["company_name"] = company_data2["name"] if company_data2 else ""
 
     profile_row = (
         supabase.table("profiles")
@@ -385,16 +389,17 @@ def _get_doc_and_profile(user_job_id: str, user: dict, supabase: Client) -> tupl
         .select("resume_doc_id")
         .eq("user_job_id", user_job_id)
         .eq("user_id", user["id"])
-        .maybe_single()
+        .limit(1)
         .execute()
     )
-    if not app_row.data or not app_row.data.get("resume_doc_id"):
+    app_row_d = (app_row.data or [])[0] if app_row.data else None
+    if not app_row_d or not app_row_d.get("resume_doc_id"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No resume generated for this job yet")
 
     doc_row = (
         supabase.table("generated_documents")
         .select("content_json")
-        .eq("id", app_row.data["resume_doc_id"])
+        .eq("id", app_row_d["resume_doc_id"])
         .single()
         .execute()
     )

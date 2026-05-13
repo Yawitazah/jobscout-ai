@@ -62,11 +62,12 @@ def score_job_for_user(self, user_id: str, job_id: str):
             .select("id, status, decision_source")
             .eq("user_id", user_id)
             .eq("job_id", job_id)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
+        existing_data = (existing.data or [])[0] if existing.data else None
         # Skip only if user has already made a manual decision on this job
-        if existing.data and existing.data.get("decision_source") == "manual":
+        if existing_data and existing_data.get("decision_source") == "manual":
             return {"status": "skipped", "reason": "manual_decision"}
 
         profile = fetch_profile(supabase, user_id)

@@ -118,8 +118,9 @@ async def process_application(supabase, app: dict) -> None:
         return
     job = job_row.data
 
-    co = supabase.table("companies").select("name").eq("id", job.get("company_id", "")).maybe_single().execute()
-    job["company_name"] = co.data["name"] if co.data else ""
+    co = supabase.table("companies").select("name").eq("id", job.get("company_id", "")).limit(1).execute()
+    co_data = (co.data or [])[0] if co.data else None
+    job["company_name"] = co_data["name"] if co_data else ""
 
     platform = job.get("source_platform") or ""
     apply_url = job.get("source_url") or ""

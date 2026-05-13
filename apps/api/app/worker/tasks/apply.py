@@ -80,10 +80,11 @@ def _prepare(application_id: str, user_id: str) -> None:
         supabase.table("companies")
         .select("name")
         .eq("id", job.get("company_id", ""))
-        .maybe_single()
+        .limit(1)
         .execute()
     )
-    job["company_name"] = company_row.data["name"] if company_row.data else ""
+    company_data = (company_row.data or [])[0] if company_row.data else None
+    job["company_name"] = company_data["name"] if company_data else ""
 
     profile_row = (
         supabase.table("profiles")
