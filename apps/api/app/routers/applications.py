@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Annotated, Any
 
@@ -466,3 +467,35 @@ def _render_text(tailored: dict, profile: dict) -> str:
         if edu.get("graduation_year"):
             lines.append(edu["graduation_year"])
     return "\n".join(lines)
+
+
+# ── Agent config download ──────────────────────────────────────────────────────
+
+@router.get("/agent/env-config")
+def download_agent_env_config(
+    user: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> Response:
+    """
+    Return a pre-filled .env file for the local agent runner.
+    The caller saves it as jobscout-agent.env inside apps/api/ and then runs
+    `python -m app.agent.local_runner` — no manual env-var exports needed.
+    """
+    lines = [
+        "# JobScout AI — Local Agent Config",
+        "# Keep this file secret. Do not commit it to git.",
+        "#",
+        f"SUPABASE_URL={os.environ.get('SUPABASE_URL', '')}",
+        f"SUPABASE_SERVICE_ROLE_KEY={os.environ.get('SUPABASE_SERVICE_ROLE_KEY', '')}",
+        f"ANTHROPIC_API_KEY={os.environ.get('ANTHROPIC_API_KEY', '')}",
+        f"AGENT_USER_ID={user['id']}",
+        "",
+        "# Optional settings:",
+        "# HEADLESS=true          # hide the browser window",
+        "# POLL_INTERVAL_SECONDS=30  # how often to check for new applications",
+    ]
+    content = "\n".join(lines) + "\n"
+    return Response(
+        content=content,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="jobscout-agent.env"'},
+    )

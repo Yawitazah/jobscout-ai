@@ -26,7 +26,10 @@ Schema:
   "full_name": "string or null",
   "email": "string or null",
   "phone": "string or null",
-  "location": "string or null",
+  "location": "City, State or null",
+  "linkedin_url": "full LinkedIn URL or null",
+  "github_url": "full GitHub URL or null",
+  "portfolio_url": "personal website / portfolio URL or null",
   "summary": "2-3 sentence professional summary or null",
   "skills": ["skill1", "skill2", ...],
   "experience": [
@@ -46,6 +49,8 @@ Schema:
     }
   ]
 }
+
+Extract linkedin_url, github_url, and portfolio_url from any URLs found in the contact/header section.
 """
 
 
@@ -116,6 +121,9 @@ async def extract_profile_from_resume(
         "email": "email",
         "phone": "phone",
         "location": "location",
+        "linkedin_url": "linkedin_url",
+        "github_url": "github_url",
+        "portfolio_url": "portfolio_url",
         "summary": "summary",
         "skills": "skills",
         "experience": "experience",

@@ -74,7 +74,6 @@ export default function ApplicationDetailPage({
   const [submitting, setSubmitting] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [showAgentCmd, setShowAgentCmd] = useState(false);
-  const [userId, setUserId] = useState<string>("");
 
   useEffect(() => {
     fetch(`/api/applications/${id}`)
@@ -82,14 +81,6 @@ export default function ApplicationDetailPage({
       .then(setApp)
       .finally(() => setLoading(false));
   }, [id]);
-
-  // Fetch current user ID for the local agent command
-  useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user?.id) setUserId(data.user.id);
-    });
-  }, []);
 
   // Realtime status subscription
   useEffect(() => {
@@ -220,7 +211,7 @@ export default function ApplicationDetailPage({
         </div>
       </div>
 
-      {/* Local agent command panel */}
+      {/* Local agent panel */}
       {showAgentCmd && app.status === "ready_to_submit" && hasDocs && (
         <div className="bg-slate-900 text-slate-100 rounded-xl p-4 space-y-3 text-xs">
           <p className="text-slate-400 font-sans font-semibold text-[11px] uppercase tracking-wider">Run the local agent on your machine</p>
@@ -236,13 +227,16 @@ export default function ApplicationDetailPage({
           </div>
 
           <div className="space-y-1">
-            <p className="text-slate-500 font-sans text-[11px] uppercase tracking-wider">2 · Set env vars in your shell</p>
-            <div className="bg-slate-800 rounded-lg px-3 py-2 font-mono text-green-400 leading-relaxed">
-              <div>export SUPABASE_URL=<span className="text-slate-400">https://fkqordxuorvvmupfrxcp.supabase.co</span></div>
-              <div>export SUPABASE_SERVICE_ROLE_KEY=<span className="text-slate-400">(from .env)</span></div>
-              <div>export ANTHROPIC_API_KEY=<span className="text-slate-400">(from .env)</span></div>
-              <div>export AGENT_USER_ID=<span className="text-yellow-300">{userId || "loading…"}</span></div>
-            </div>
+            <p className="text-slate-500 font-sans text-[11px] uppercase tracking-wider">2 · Download your config (one time)</p>
+            <a
+              href="/api/agent/download-config"
+              download="jobscout-agent.env"
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-sans font-medium px-3 py-2 rounded-lg w-fit transition-colors"
+            >
+              <Download size={12} />
+              Download jobscout-agent.env
+            </a>
+            <p className="text-slate-500 font-sans text-[11px]">Save it inside <span className="text-slate-300 font-mono">apps/api/</span>. All keys are pre-filled — no copy-pasting.</p>
           </div>
 
           <div className="space-y-1">
@@ -383,8 +377,17 @@ function ResumeTab({ app, onRegenerate }: { app: ApplicationDetail; onRegenerate
             </p>
           )}
           {(contact.linkedin_url || contact.github_url || contact.portfolio_url) && (
-            <p className="text-xs text-gray-400">
-              {[contact.linkedin_url, contact.github_url, contact.portfolio_url].filter(Boolean).join(" · ")}
+            <p className="text-xs text-blue-500 space-x-2">
+              {[contact.linkedin_url, contact.github_url, contact.portfolio_url].filter(Boolean).map((url: string, i: number) => (
+                <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="hover:underline">{url}</a>
+              ))}
+            </p>
+          )}
+          {!contact.linkedin_url && !contact.email && (
+            <p className="text-xs text-amber-500 mt-1">
+              ⚠ Contact info comes from your{" "}
+              <a href="/profile" className="underline">Profile</a>.
+              Update it there, then click Regenerate.
             </p>
           )}
         </div>

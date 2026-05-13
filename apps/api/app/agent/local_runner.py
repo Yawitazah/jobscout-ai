@@ -31,8 +31,28 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import pathlib
 import sys
 from datetime import datetime, timezone
+
+
+def _load_agent_env() -> None:
+    """Auto-load jobscout-agent.env (or .env) from cwd or parent dirs."""
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return  # python-dotenv not installed; fall through to env vars
+
+    for name in ("jobscout-agent.env", ".env"):
+        for directory in (pathlib.Path.cwd(), pathlib.Path.cwd().parent):
+            candidate = directory / name
+            if candidate.exists():
+                load_dotenv(candidate, override=False)
+                return
+
+
+_load_agent_env()
+
 
 logging.basicConfig(
     level=logging.INFO,
