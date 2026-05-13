@@ -118,7 +118,13 @@ export default function ApplicationsPage() {
     }
   };
 
-  const readyCount = jobs.filter((j) => j.application?.status === "ready_to_submit").length;
+  const readyWithDocs = jobs.filter(
+    (j) => j.application?.status === "ready_to_submit" && j.application?.resume_doc_id
+  ).length;
+  const readyNoDocs = jobs.filter(
+    (j) => j.application?.status === "ready_to_submit" && !j.application?.resume_doc_id
+  ).length;
+  const readyCount = readyWithDocs + readyNoDocs;
 
   const filtered = jobs.filter((j) => {
     const s = effectiveStatus(j.application);
@@ -149,20 +155,39 @@ export default function ApplicationsPage() {
         <span className="text-sm text-gray-500">{jobs.length} approved</span>
       </div>
 
-      {/* Local agent banner */}
-      {readyCount > 0 && (
+      {/* Local agent banner — only show when docs actually exist */}
+      {readyWithDocs > 0 && (
         <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 flex gap-3 items-start">
           <Send size={16} className="text-blue-600 mt-0.5 shrink-0" />
           <div>
             <p className="text-sm font-semibold text-blue-900">
-              {readyCount} application{readyCount > 1 ? "s" : ""} ready to submit
+              {readyWithDocs} application{readyWithDocs > 1 ? "s" : ""} ready to submit
             </p>
             <p className="text-xs text-blue-700 mt-0.5">
-              Resume &amp; cover letter are ready. Start the local agent on your computer to open a browser and submit.
+              Resume &amp; cover letter are tailored. Start the local agent to open a browser and submit.
             </p>
             <code className="mt-1.5 block text-[11px] bg-blue-100 text-blue-800 rounded px-2 py-1 font-mono">
               cd apps/api &amp;&amp; python -m app.agent.local_runner
             </code>
+          </div>
+        </div>
+      )}
+
+      {/* Regenerate banner — docs missing due to API credit issue */}
+      {readyNoDocs > 0 && readyWithDocs === 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex gap-3 items-start">
+          <RefreshCw size={16} className="text-amber-600 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-amber-900">
+              {readyNoDocs} application{readyNoDocs > 1 ? "s need" : " needs"} document generation
+            </p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Add credits at{" "}
+              <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noreferrer" className="underline">
+                console.anthropic.com/settings/billing
+              </a>
+              {" "}then click <strong>Regenerate Docs</strong> on each card below.
+            </p>
           </div>
         </div>
       )}
