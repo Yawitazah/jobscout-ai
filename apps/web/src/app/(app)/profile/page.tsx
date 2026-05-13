@@ -9,13 +9,13 @@ export default async function ProfilePage() {
   } = await supabase.auth.getUser();
 
   // Cast via unknown to avoid Supabase generated-type errors for newly migrated columns
-  // (certifications, projects, languages, linkedin_url, github_url, portfolio_url, additional_context)
+  // (certifications, projects, languages, linkedin_url, github_url, portfolio_url, additional_context, resume_email)
   const { data: profileData } = await supabase
     .from("profiles")
     .select(
       "id, full_name, email, phone, location, summary, skills, experience, education, " +
       "linkedin_url, github_url, portfolio_url, additional_context, " +
-      "certifications, projects, languages"
+      "certifications, projects, languages, resume_email"
     )
     .eq("id", user!.id)
     .single();
@@ -39,6 +39,7 @@ export default async function ProfilePage() {
     certifications: [],
     projects: [],
     languages: [],
+    resume_email: null,
   };
 
   // Fetch resume upload history
