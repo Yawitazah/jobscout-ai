@@ -308,6 +308,7 @@ def _choose_filler(platform, page, profile, saved_answers, apply_url,
                 apply_url=apply_url,
                 cover_letter_text=cover_letter_text,
                 resume_pdf_bytes=resume_pdf_bytes,
+                company_name=job.get("company_name", ""),
             )
         except Exception as exc:
             logger.warning("GreenhouseFiller init failed, falling back to computer use: %s", exc)

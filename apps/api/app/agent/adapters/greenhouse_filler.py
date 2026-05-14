@@ -20,8 +20,10 @@ _EMAIL = 'input[id="email"], input[name="email"]'
 _PHONE = 'input[id="phone"], input[name="phone"]'
 _LINKEDIN = 'input[id*="linkedin"], input[name*="linkedin"]'
 _WEBSITE = 'input[id*="website"], input[id*="portfolio"], input[name*="website"]'
+_LOCATION = 'input[id="candidate-location"], input[id*="location"][type="text"]'
 _RESUME_UPLOAD = 'input[type="file"][id*="resume"], input[type="file"][name*="resume"]'
 _COVER_LETTER_TEXTAREA = 'textarea[id*="cover_letter"], textarea[name*="cover_letter"]'
+_COVER_LETTER_UPLOAD = 'input[type="file"][id*="cover_letter"], input[type="file"][name*="cover_letter"]'
 _SUBMIT = 'input[type="submit"][value*="Submit"], button[type="submit"]'
 
 
@@ -34,11 +36,14 @@ class GreenhouseFiller(FormFiller):
         apply_url: str,
         cover_letter_text: str = "",
         resume_pdf_bytes: bytes | None = None,
+        company_name: str = "",
     ) -> None:
         super().__init__(page, profile, saved_answers)
         self.apply_url = apply_url
         self.cover_letter_text = cover_letter_text
         self.resume_pdf_bytes = resume_pdf_bytes
+        self.company_name = company_name
+        self._orig_page = page  # may be replaced by iframe frame in _switch_to_greenhouse_iframe
 
     async def fill(self) -> None:
         await self.page.goto(self.apply_url, wait_until="domcontentloaded", timeout=30_000)
@@ -47,17 +52,31 @@ class GreenhouseFiller(FormFiller):
         except Exception:
             pass
 
-        # If this is a company-hosted page (e.g. stripe.com/jobs?gh_jid=...),
-        # detect a Greenhouse iframe and navigate directly into it so we get
-        # the canonical boards.greenhouse.io DOM with predictable selectors.
+        logger.info("  Loaded: %s | %s", self.page.url, await self.page.title())
+
+        # Step 1: if not already on a Greenhouse board, try to resolve the canonical URL
         canonical = await self._resolve_greenhouse_url()
         if canonical and canonical != self.page.url:
-            logger.info("  Greenhouse embed detected — navigating to canonical URL: %s", canonical)
+            logger.info("  Navigating to canonical Greenhouse URL: %s", canonical)
             await self.page.goto(canonical, wait_until="domcontentloaded", timeout=30_000)
             try:
                 await self.page.wait_for_load_state("networkidle", timeout=15_000)
             except Exception:
                 pass
+            logger.info("  After resolve: %s | %s", self.page.url, await self.page.title())
+
+        # Step 2: if still on a job listing page (not yet the form), click Apply
+        if not await self._is_on_application_form():
+            logger.info("  Not on application form yet — looking for Apply button")
+            await self._click_apply_and_wait()
+            logger.info("  After Apply click: %s | %s", self.page.url, await self.page.title())
+
+        # Step 3: wait for the form to render and switch to the iframe if needed
+        await self._wait_for_form()
+        await self._switch_to_greenhouse_iframe()
+
+        # Diagnostic: dump visible input fields so we can tune selectors
+        await self._log_form_fields()
 
         name = (self.profile.get("full_name") or "").split(" ", 1)
         first = name[0] if name else ""
@@ -73,9 +92,13 @@ class GreenhouseFiller(FormFiller):
         await self._fill_text(_PHONE, self.profile.get("phone") or "", "phone")
         await self._fill_text(_LINKEDIN, self.profile.get("linkedin_url") or "", "linkedin")
         await self._fill_text(_WEBSITE, self.profile.get("portfolio_url") or self.profile.get("github_url") or "", "website")
+        await self._fill_text(_LOCATION, self.profile.get("location") or "", "location")
 
         if self.cover_letter_text:
-            await self._fill_text(_COVER_LETTER_TEXTAREA, self.cover_letter_text, "cover_letter")
+            # Try textarea first (old Greenhouse), then file upload (new Greenhouse)
+            filled = await self._fill_text(_COVER_LETTER_TEXTAREA, self.cover_letter_text, "cover_letter")
+            if not filled:
+                await self._upload_text_as_file(_COVER_LETTER_UPLOAD, self.cover_letter_text, "cover_letter.txt", "cover_letter")
 
         await self._upload_resume()
         await self._fill_custom_questions()
@@ -85,54 +108,60 @@ class GreenhouseFiller(FormFiller):
         If the current page is a company-hosted Greenhouse embed, return the
         canonical boards.greenhouse.io URL so we can navigate there directly.
 
-        Strategy 1: look for a Greenhouse iframe whose src we can steal.
-        Strategy 2: gh_jid in query string + known company slug -> construct URL.
+        Strategies tried in order:
+          1. Playwright frame objects (for already-loaded iframes)
+          2. DOM <iframe src> inspection
+          3. gh_jid param + company name -> construct canonical URL
         """
-        # Strategy 1: iframe src
+        current_url = self.page.url
+
+        # Already on a Greenhouse board -- nothing to resolve
+        if "boards.greenhouse.io" in current_url or "job-boards.greenhouse.io" in current_url:
+            return None
+
+        # Strategy 1: Playwright frame objects (populated after networkidle)
         try:
-            frames = self.page.frames
-            for frame in frames:
+            for frame in self.page.frames:
                 url = frame.url or ""
-                if "greenhouse.io" in url and "boards" in url:
-                    logger.debug("Found Greenhouse iframe: %s", url)
+                if "greenhouse.io" in url and ("boards" in url or "jobs" in url):
+                    logger.info("  Greenhouse iframe found via frame list: %s", url)
                     return url
         except Exception as exc:
             logger.debug("Frame inspection failed: %s", exc)
 
-        # Strategy 2: look for <iframe src="...greenhouse..."> in DOM
+        # Strategy 2: DOM <iframe src> or <script> containing board URL
         try:
             iframe_src = await self.page.evaluate("""() => {
-                const iframes = document.querySelectorAll('iframe');
-                for (const f of iframes) {
+                // Check iframes
+                for (const f of document.querySelectorAll('iframe')) {
                     if (f.src && f.src.includes('greenhouse.io')) return f.src;
+                }
+                // Check scripts for embedded board URL patterns
+                for (const s of document.querySelectorAll('script')) {
+                    const m = s.textContent.match(/https:\\/\\/boards\\.greenhouse\\.io\\/[a-z0-9_-]+\\/jobs\\/\\d+/i);
+                    if (m) return m[0];
                 }
                 return null;
             }""")
             if iframe_src:
-                logger.debug("Found Greenhouse iframe in DOM: %s", iframe_src)
+                logger.info("  Greenhouse embed found in DOM: %s", iframe_src)
                 return iframe_src
         except Exception as exc:
             logger.debug("DOM iframe search failed: %s", exc)
 
-        # Strategy 3: gh_jid in current URL -> construct boards.greenhouse.io URL
-        current_url = self.page.url
-        gh_jid_match = re.search(r"gh_jid=(\d+)", current_url)
+        # Strategy 3: gh_jid in URL + company name -> construct canonical apply URL
+        gh_jid_match = re.search(r"gh_jid=(\d+)", current_url) or re.search(r"gh_jid=(\d+)", self.apply_url)
         if gh_jid_match:
             gh_jid = gh_jid_match.group(1)
-            # Also check original apply_url
-            if not gh_jid:
-                gh_jid_match2 = re.search(r"gh_jid=(\d+)", self.apply_url)
-                if gh_jid_match2:
-                    gh_jid = gh_jid_match2.group(1)
-            if gh_jid:
-                # Try to find the board token from the page's script tags or meta
-                board_token = await self._extract_board_token() or _company_name_to_slug(
-                    self.profile.get("company_name", "")
-                )
-                if board_token:
-                    candidate = f"https://boards.greenhouse.io/{board_token}/jobs/{gh_jid}"
-                    logger.debug("Constructed Greenhouse URL: %s", candidate)
-                    return candidate
+            board_token = await self._extract_board_token() or _company_name_to_slug(self.company_name)
+            if board_token:
+                # Go directly to the application form (try both Greenhouse board domains)
+                # Newer Greenhouse uses job-boards.greenhouse.io
+                candidate = f"https://job-boards.greenhouse.io/{board_token}/jobs/{gh_jid}"
+                logger.info("  Constructed Greenhouse apply URL: %s", candidate)
+                return candidate
+            else:
+                logger.warning("  gh_jid=%s found but no company slug to build canonical URL", gh_jid)
 
         return None
 
@@ -154,6 +183,141 @@ class GreenhouseFiller(FormFiller):
             return token
         except Exception:
             return None
+
+    async def _is_on_application_form(self) -> bool:
+        """Return True if the current page looks like a Greenhouse application form."""
+        try:
+            # Check if first_name field is visible quickly
+            el = self.page.locator(_FIRST_NAME).first
+            await el.wait_for(state="visible", timeout=2_000)
+            return True
+        except Exception:
+            pass
+        # Also check for common form container class
+        try:
+            count = await self.page.locator("#application_form, #application, form#new_application").count()
+            return count > 0
+        except Exception:
+            return False
+
+    async def _click_apply_and_wait(self) -> None:
+        """Find and click an Apply button, then wait for the form to load."""
+        selectors = [
+            'a[href*="/applications/new"]',
+            'a[href*="apply"]',
+            'button:text-matches("Apply for this job", "i")',
+            'a:text-matches("Apply for this job", "i")',
+            'button:text-matches("Apply Now", "i")',
+            'a:text-matches("Apply Now", "i")',
+            'button:text-matches("Apply", "i")',
+            '.apply-button',
+            '[data-provides="job-apply-button"]',
+        ]
+        for sel in selectors:
+            try:
+                el = self.page.locator(sel).first
+                await el.wait_for(state="visible", timeout=2_000)
+                href = await el.get_attribute("href") if await el.evaluate("el => el.tagName") == "A" else None
+                await el.click()
+                logger.info("  Clicked apply button: %s", sel)
+                try:
+                    await self.page.wait_for_load_state("networkidle", timeout=15_000)
+                except Exception:
+                    pass
+                return
+            except Exception:
+                continue
+        logger.warning("  No Apply button found — will attempt to fill current page as-is")
+
+    async def _switch_to_greenhouse_iframe(self) -> None:
+        """
+        If the application form is inside a Greenhouse iframe (common for company-hosted
+        pages like stripe.com/jobs/.../apply), switch self.page to that frame so all
+        subsequent fill/click operations work inside it.
+        """
+        try:
+            # Wait for the iframe to be attached (it may appear after page load)
+            iframe_el = self.page.frame_locator(
+                'iframe[src*="greenhouse.io"], iframe#grnhse_iframe, iframe[id*="greenhouse"]'
+            )
+            # Check if there's content inside the iframe
+            await iframe_el.locator("body").wait_for(state="attached", timeout=10_000)
+            # Find the matching Playwright Frame object
+            for frame in self.page.frames:
+                if "greenhouse.io" in (frame.url or ""):
+                    logger.info("  Switching to Greenhouse iframe: %s", frame.url)
+                    # Patch self.page to point to the frame so all locator calls use it
+                    self._orig_page = self.page  # keep reference for submit
+                    self.page = frame  # type: ignore[assignment]
+                    return
+        except Exception as exc:
+            logger.debug("iframe switch skipped: %s", exc)
+
+    async def _wait_for_form(self, timeout: int = 15_000) -> None:
+        """Wait until at least one visible input appears (handles React lazy renders)."""
+        try:
+            await self.page.wait_for_selector(
+                "input:not([type=hidden]):not([type=submit]), textarea",
+                state="visible",
+                timeout=timeout,
+            )
+            logger.info("  Form inputs detected on page")
+        except Exception:
+            logger.warning("  No inputs found after %dms — may be an SPA still loading", timeout)
+
+    async def _log_form_fields(self) -> None:
+        """Dump visible input/textarea fields (and iframe info) to the log."""
+        try:
+            fields = await self.page.evaluate("""() => {
+                const inputs = document.querySelectorAll('input:not([type=hidden]):not([type=submit]), textarea, select');
+                const iframes = document.querySelectorAll('iframe');
+                return {
+                    fields: Array.from(inputs).slice(0, 20).map(el => ({
+                        tag: el.tagName,
+                        type: el.type || '',
+                        id: el.id || '',
+                        name: el.name || '',
+                        placeholder: el.placeholder || '',
+                        label: (() => {
+                            const lbl = document.querySelector('label[for="' + el.id + '"]');
+                            return lbl ? lbl.textContent.trim().slice(0, 60) : '';
+                        })(),
+                    })),
+                    iframes: Array.from(iframes).map(f => ({ src: f.src, id: f.id, name: f.name })),
+                };
+            }""")
+            logger.info("  Form fields on page (%d found), iframes (%d):",
+                        len(fields["fields"]), len(fields["iframes"]))
+            for f in fields["fields"]:
+                logger.info("    <%s type=%s id=%r name=%r> label=%r",
+                            f["tag"], f["type"], f["id"], f["name"], f["label"])
+            for iframe in fields["iframes"]:
+                logger.info("    IFRAME: src=%r id=%r name=%r", iframe["src"], iframe["id"], iframe["name"])
+        except Exception as exc:
+            logger.debug("Field dump failed: %s", exc)
+
+    async def _upload_text_as_file(self, selector: str, text: str, filename: str, label: str) -> bool:
+        """Write text to a temp file and upload it via a file input."""
+        try:
+            el = self.page.locator(selector).first
+            await el.wait_for(state="attached", timeout=3_000)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1],
+                                             mode="w", encoding="utf-8") as tmp:
+                tmp.write(text)
+                tmp_path = tmp.name
+            try:
+                await el.set_input_files(tmp_path)
+                logger.info("  Uploaded %s as file (%d chars)", label, len(text))
+                self.form_responses[label] = f"[file:{filename}]"
+                return True
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+        except Exception as exc:
+            logger.debug("Text file upload for %s skipped: %s", label, exc)
+            return False
 
     async def _upload_resume(self) -> None:
         """Upload resume PDF if we have bytes and there's a file input."""
@@ -231,7 +395,8 @@ class GreenhouseFiller(FormFiller):
                 await self.page.wait_for_load_state("networkidle", timeout=15_000)
                 submitted = True
                 confirmation_number = await _extract_confirmation(self.page)
-                screenshot_path = await capture(self.page, "confirmation")
+                # Use _orig_page for screenshot (Frame objects don't have .screenshot())
+                screenshot_path = await capture(self._orig_page, "confirmation")
                 self._log_step(log, "confirmation_detected", confirmation_number or "none")
             except Exception as exc:
                 self._log_step(log, "post_submit_wait_failed", str(exc), ok=False)
