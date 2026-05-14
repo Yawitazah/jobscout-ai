@@ -39,10 +39,18 @@ SUMMARY (3 sentences max):
 This must NOT be generic. It must read as if written specifically for this company and role.
 
 SKILLS:
-• Lead with the skills that appear in the job description.
-• Group related skills; put job-critical skills first.
-• Mirror the exact terminology used in the JD (e.g. if JD says "Google Analytics" don't write "GA").
-• Include every overlapping skill, plus any closely related ones the candidate has.
+• Pick AT MOST 15 skills total. Quality over quantity — a focused list reads
+  as senior; a 40-item dump reads as junior and gets skimmed past.
+• Order them by relevance to THIS specific job: the most JD-critical skills
+  first, niceties last.
+• Mirror the exact terminology used in the JD (e.g. if JD says "Google
+  Analytics" don't write "GA").
+• Only include skills the candidate actually has (per integrity rules below).
+• When grouping is natural (e.g. "Paid: Google Ads, Meta Ads | Analytics: GA4,
+  Looker"), prefer pipe-grouped categories within a single skill entry. Each
+  entry can be a category header + a few items.
+• Cut: generic soft skills ("communication", "teamwork") unless the JD
+  explicitly names them. Cut overlapping near-duplicates.
 
 EXPERIENCE BULLETS (most critical section):
 • Reorder roles so the most relevant one appears first (even if it's not the most recent).
@@ -78,7 +86,7 @@ Return ONLY valid JSON, no markdown fences, no commentary:
 
 {
   "summary": "targeted 2-3 sentence summary",
-  "skills": ["skill1", "skill2", ...],
+  "skills": ["skill1", "skill2", ...],   // MAX 15. Most JD-relevant first.
   "experience": [
     {
       "title": "Job Title",
