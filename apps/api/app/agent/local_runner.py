@@ -208,7 +208,23 @@ async def process_application(supabase, app: dict) -> None:
         if doc.data and doc.data.get("content_json"):
             try:
                 from app.services.documents.resume_builder import build_pdf
-                resume_pdf_bytes = build_pdf(doc.data["content_json"], profile.get("full_name") or "")
+                # Some resume documents are stored without a `contact` block —
+                # the tailoring pipeline expects contact info to live on the
+                # profile and be merged in at PDF build time. Backfill it here
+                # so resumes always carry name + email + phone + location +
+                # links into the rendered PDF.
+                content_json = dict(doc.data["content_json"])
+                existing_contact = content_json.get("contact") or {}
+                content_json["contact"] = {
+                    "full_name":   existing_contact.get("full_name")   or profile.get("full_name")     or "",
+                    "email":       existing_contact.get("email")       or profile.get("resume_email")  or profile.get("email") or profile.get("contact_email") or "",
+                    "phone":       existing_contact.get("phone")       or profile.get("phone")         or "",
+                    "location":    existing_contact.get("location")    or profile.get("location")      or "",
+                    "linkedin_url":existing_contact.get("linkedin_url")or profile.get("linkedin_url")  or "",
+                    "github_url":  existing_contact.get("github_url")  or profile.get("github_url")    or "",
+                    "portfolio_url":existing_contact.get("portfolio_url") or profile.get("portfolio_url") or "",
+                }
+                resume_pdf_bytes = build_pdf(content_json, profile.get("full_name") or "")
                 logger.info("  Resume PDF built (%d bytes)", len(resume_pdf_bytes))
             except Exception as exc:
                 logger.warning("  PDF build failed (will continue without): %s", exc)
