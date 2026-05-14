@@ -85,10 +85,12 @@ def _set_status(supabase, app_id: str, status: str) -> None:
     }).eq("id", app_id).execute()
 
 
-def _mark_failed(supabase, app_id: str, reason: str) -> None:
+def _mark_failed(supabase, app_id: str, reason: str, prior_log: list | None = None) -> None:
+    submission_log = list(prior_log or [])
+    submission_log.append({"action": "error", "detail": reason, "ok": False})
     supabase.table("applications").update({
         "status": "submit_failed",
-        "submission_log": [{"action": "error", "detail": reason, "ok": False}],
+        "submission_log": submission_log,
         "live_screenshot_path": None,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }).eq("id", app_id).execute()
@@ -289,7 +291,12 @@ async def process_application(supabase, app: dict) -> None:
         # awaiting_user_submit). Don't overwrite it with submit_failed.
         logger.info("  Application %s left in awaiting_user_submit (user hasn't submitted yet)", app_id)
     else:
-        _mark_failed(supabase, app_id, "filler reported submitted=False")
+        _mark_failed(
+            supabase,
+            app_id,
+            "filler reported submitted=False",
+            prior_log=result.get("submission_log"),
+        )
 
 
 def _choose_filler(platform, page, profile, saved_answers, apply_url,
@@ -307,7 +314,7 @@ def _choose_filler(platform, page, profile, saved_answers, apply_url,
     if USE_FAST_PATH and platform == "greenhouse":
         try:
             from app.agent.adapters.greenhouse_filler import GreenhouseFiller
-            logger.info("  Using GreenhouseFiller (auto-submit, script-based)")
+            logger.info("  Using GreenhouseFiller (auto-submit unless captcha, script-based)")
             return GreenhouseFiller(
                 page=page,
                 profile=profile,
@@ -316,6 +323,9 @@ def _choose_filler(platform, page, profile, saved_answers, apply_url,
                 cover_letter_text=cover_letter_text,
                 resume_pdf_bytes=resume_pdf_bytes,
                 company_name=job.get("company_name", ""),
+                supabase=supabase,
+                user_id=user_id,
+                app_id=app_id,
             )
         except Exception as exc:
             logger.warning("GreenhouseFiller init failed, falling back to PrefillCopilot: %s", exc)

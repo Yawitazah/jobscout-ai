@@ -518,7 +518,7 @@ class PrefillCopilot(FormFiller):
             try:
                 self._supabase.table("applications").update({
                     "status": "awaiting_user_submit",
-                    "submission_method": "user_manual",
+                    "submission_method": "agent_assisted",
                     "form_responses": self.form_responses,
                     "submission_log": self._log,
                     "updated_at": datetime.now(timezone.utc).isoformat(),
