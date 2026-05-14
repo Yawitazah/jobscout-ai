@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 VIEWPORT_W = 1280
 VIEWPORT_H = 900
-MAX_ITERATIONS = 60          # hard cap — ~3-4 minutes of back-and-forth
+MAX_ITERATIONS = 15          # hard cap — last resort only, keep it cheap
 INTER_ACTION_DELAY = 0.4     # seconds to wait between actions
 
 
@@ -205,8 +205,8 @@ class ComputerUseFiller:
         for iteration in range(MAX_ITERATIONS):
             try:
                 response = client.beta.messages.create(
-                    model="claude-sonnet-4-5",
-                    max_tokens=4096,
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=1024,
                     system=system_prompt,
                     tools=tools,
                     messages=messages,
@@ -276,7 +276,7 @@ class ComputerUseFiller:
                 {
                     "action": "computer_use",
                     "ok": self._submitted,
-                    "detail": f"claude-opus-4-5 — {len(messages)} turns",
+                    "detail": f"claude-haiku-4-5 — {len(messages)} turns",
                 }
             ],
         }

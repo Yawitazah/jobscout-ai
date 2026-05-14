@@ -291,18 +291,28 @@ def _choose_filler(platform, page, profile, saved_answers, apply_url,
                    cover_letter_text, resume_pdf_bytes, job,
                    supabase=None, user_id=None, app_id=None):
     """
-    Use the fast CSS-based filler for known platforms (Greenhouse, Lever).
-    Fall back to Claude computer use for everything else.
+    Tier 1: Playwright CSS filler for Greenhouse/Lever (zero AI cost).
+            The filler auto-detects company-hosted embeds (e.g. stripe.com?gh_jid=...)
+            and navigates to the canonical board URL automatically.
+    Tier 2: answer_resolver uses Claude Haiku only for individual unknown questions.
+    Tier 3: Claude computer-use (Haiku, 15 iterations) as absolute last resort.
     """
-    # Only use the fast CSS filler when the URL is a standard platform board URL.
-    # Company-hosted embeds (e.g. stripe.com/jobs?gh_jid=...) have different DOM
-    # structures and will time out — fall back to computer use in those cases.
-    _FAST_PATH_DOMAINS = {
-        "greenhouse": ("boards.greenhouse.io", "job-boards.greenhouse.io"),
-        "lever":      ("jobs.lever.co",),
-    }
-    url_ok = any(d in apply_url for d in _FAST_PATH_DOMAINS.get(platform, ()))
-    if USE_FAST_PATH and platform in ("greenhouse", "lever") and url_ok:
+    if USE_FAST_PATH and platform == "greenhouse":
+        try:
+            from app.agent.adapters.greenhouse_filler import GreenhouseFiller
+            logger.info("  Using GreenhouseFiller (script-based, zero AI cost for form fill)")
+            return GreenhouseFiller(
+                page=page,
+                profile=profile,
+                saved_answers=saved_answers,
+                apply_url=apply_url,
+                cover_letter_text=cover_letter_text,
+                resume_pdf_bytes=resume_pdf_bytes,
+            )
+        except Exception as exc:
+            logger.warning("GreenhouseFiller init failed, falling back to computer use: %s", exc)
+
+    if USE_FAST_PATH and platform == "lever":
         try:
             from app.agent.registry import get_filler
             return get_filler(
@@ -315,11 +325,10 @@ def _choose_filler(platform, page, profile, saved_answers, apply_url,
                 resume_pdf_bytes=resume_pdf_bytes,
             )
         except Exception as exc:
-            logger.warning("Fast-path filler init failed (%s), falling back to computer use: %s", platform, exc)
-    elif USE_FAST_PATH and platform in ("greenhouse", "lever") and not url_ok:
-        logger.info("  URL is not a standard %s board URL — skipping fast path, using computer use", platform)
+            logger.warning("LeverFiller init failed, falling back to computer use: %s", exc)
 
-    # Claude computer use — works on any ATS
+    # Last resort: Claude computer-use (cheap Haiku model, capped at 15 iterations)
+    logger.info("  Falling back to ComputerUseFiller (platform=%s)", platform)
     from app.agent.computer_use_filler import ComputerUseFiller
     return ComputerUseFiller(
         page=page,
