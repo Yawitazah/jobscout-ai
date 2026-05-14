@@ -101,7 +101,7 @@ export default function ApplicationDetailPage({
           const newStatus = (payload.new as Partial<ApplicationDetail>).status;
           // When tailoring/writing completes, do a full refetch so we get the
           // newly generated resume + cover_letter joined data (not in realtime payload).
-          const completedStatuses = ["ready_to_submit", "submitted", "submit_failed", "more_info_needed"];
+          const completedStatuses = ["ready_to_submit", "submitting", "submitted", "submit_failed", "more_info_needed"];
           if (newStatus && completedStatuses.includes(newStatus)) {
             fetch(`/api/applications/${id}`)
               .then((r) => r.json())
@@ -323,7 +323,7 @@ export default function ApplicationDetailPage({
       {/* Tab content */}
       {tab === "resume" && <ResumeTab app={app} onRegenerate={triggerRegenerate} />}
       {tab === "cover_letter" && <CoverLetterTab app={app} onRegenerate={triggerRegenerate} />}
-      {tab === "submission" && <SubmissionTab app={app} />}
+      {tab === "submission" && <SubmissionTab app={app} applicationId={id} />}
       {tab === "timeline" && <TimelineTab applicationId={id} />}
     </div>
   );
@@ -588,12 +588,52 @@ function CoverLetterTab({ app, onRegenerate }: { app: ApplicationDetail; onRegen
   );
 }
 
-function SubmissionTab({ app }: { app: ApplicationDetail }) {
+function SubmissionTab({ app, applicationId }: { app: ApplicationDetail; applicationId: string }) {
   const log = app.submission_log ?? [];
   const responses = app.form_responses ?? {};
+  const isSubmitting = app.status === "submitting";
+
+  // Live screenshot: refresh src every 3 seconds while submitting
+  const [screenshotTs, setScreenshotTs] = useState(() => Date.now());
+  const [screenshotError, setScreenshotError] = useState(false);
+
+  useEffect(() => {
+    if (!isSubmitting) return;
+    setScreenshotError(false);
+    const interval = setInterval(() => setScreenshotTs(Date.now()), 3000);
+    return () => clearInterval(interval);
+  }, [isSubmitting]);
 
   return (
     <div className="space-y-6">
+      {/* Live agent view */}
+      {isSubmitting && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Live agent view</h3>
+            <span className="flex items-center gap-1 text-[10px] text-yellow-600">
+              <Loader2 size={10} className="animate-spin" /> Live
+            </span>
+          </div>
+          {screenshotError ? (
+            <div className="border border-gray-100 rounded-xl bg-gray-50 h-40 flex items-center justify-center text-xs text-gray-400">
+              Screenshot not available yet — agent is starting up…
+            </div>
+          ) : (
+            <div className="border border-gray-200 rounded-xl overflow-hidden bg-gray-900">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`/api/applications/live-screenshot/${applicationId}?t=${screenshotTs}`}
+                alt="Live agent browser view"
+                className="w-full object-contain"
+                onError={() => setScreenshotError(true)}
+                onLoad={() => setScreenshotError(false)}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {app.submitted_at && (
         <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-sm text-green-700">
           Submitted on {new Date(app.submitted_at).toLocaleString()}
@@ -630,7 +670,7 @@ function SubmissionTab({ app }: { app: ApplicationDetail }) {
         </div>
       )}
 
-      {log.length === 0 && !app.submitted_at && (
+      {log.length === 0 && !app.submitted_at && !isSubmitting && (
         <p className="text-sm text-gray-400">No submission data yet.</p>
       )}
     </div>

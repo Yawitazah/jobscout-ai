@@ -131,6 +131,9 @@ class ComputerUseFiller:
         cover_letter_text: str = "",
         resume_pdf_bytes: bytes | None = None,
         job: dict | None = None,
+        supabase=None,
+        user_id: str | None = None,
+        app_id: str | None = None,
     ):
         self.page = page
         self.profile = profile
@@ -138,6 +141,12 @@ class ComputerUseFiller:
         self.cover_letter_text = cover_letter_text
         self.resume_pdf_bytes = resume_pdf_bytes
         self.job = job or {}
+
+        # Live screenshot streaming
+        self._supabase = supabase
+        self._user_id = user_id
+        self._app_id = app_id
+        self._last_live_upload: float = 0.0
 
         self._submitted = False
         self._confirmation: str | None = None
@@ -369,7 +378,38 @@ class ComputerUseFiller:
 
     async def _screenshot_b64(self) -> str:
         png = await self.page.screenshot(type="png", full_page=False)
+        asyncio.ensure_future(self._push_live_screenshot(png))
         return base64.standard_b64encode(png).decode()
+
+    async def _push_live_screenshot(self, png: bytes) -> None:
+        """Upload screenshot to storage and update live_screenshot_path (throttled to 3s)."""
+        import time
+        if not self._supabase or not self._app_id or not self._user_id:
+            return
+        now = time.monotonic()
+        if now - self._last_live_upload < 3.0:
+            return
+        self._last_live_upload = now
+        path = f"{self._user_id}/{self._app_id}/live.png"
+        try:
+            try:
+                self._supabase.storage.from_("generated-documents").upload(
+                    path, png, file_options={"content-type": "image/png", "upsert": "true"},
+                )
+            except Exception:
+                # Fallback: remove then re-upload if upsert isn't supported
+                try:
+                    self._supabase.storage.from_("generated-documents").remove([path])
+                except Exception:
+                    pass
+                self._supabase.storage.from_("generated-documents").upload(
+                    path, png, file_options={"content-type": "image/png"},
+                )
+            self._supabase.table("applications").update(
+                {"live_screenshot_path": path}
+            ).eq("id", self._app_id).execute()
+        except Exception as exc:
+            logger.debug("Live screenshot push failed: %s", exc)
 
 
 def _extract_confirmation(text: str) -> str | None:

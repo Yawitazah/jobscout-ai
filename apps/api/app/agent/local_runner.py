@@ -89,6 +89,7 @@ def _mark_failed(supabase, app_id: str, reason: str) -> None:
     supabase.table("applications").update({
         "status": "submit_failed",
         "submission_log": [{"action": "error", "detail": reason, "ok": False}],
+        "live_screenshot_path": None,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }).eq("id", app_id).execute()
     logger.error("✗  Application %s failed: %s", app_id, reason)
@@ -231,6 +232,9 @@ async def process_application(supabase, app: dict) -> None:
                 cover_letter_text=cover_letter_text,
                 resume_pdf_bytes=resume_pdf_bytes,
                 job=job,
+                supabase=supabase,
+                user_id=user_id,
+                app_id=app_id,
             )
             logger.info("  Filler  : %s", type(filler).__name__)
             await filler.fill()
@@ -249,6 +253,14 @@ async def process_application(supabase, app: dict) -> None:
             questions,
         )
         return
+
+    # ── Clear live screenshot ──
+    try:
+        supabase.table("applications").update(
+            {"live_screenshot_path": None}
+        ).eq("id", app_id).execute()
+    except Exception:
+        pass
 
     # ── Persist result ──
     screenshot_paths: list[str] = []
@@ -276,7 +288,8 @@ async def process_application(supabase, app: dict) -> None:
 
 
 def _choose_filler(platform, page, profile, saved_answers, apply_url,
-                   cover_letter_text, resume_pdf_bytes, job):
+                   cover_letter_text, resume_pdf_bytes, job,
+                   supabase=None, user_id=None, app_id=None):
     """
     Use the fast CSS-based filler for known platforms (Greenhouse, Lever).
     Fall back to Claude computer use for everything else.
@@ -315,6 +328,9 @@ def _choose_filler(platform, page, profile, saved_answers, apply_url,
         cover_letter_text=cover_letter_text,
         resume_pdf_bytes=resume_pdf_bytes,
         job=job,
+        supabase=supabase,
+        user_id=user_id,
+        app_id=app_id,
     )
 
 

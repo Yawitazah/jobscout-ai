@@ -90,6 +90,33 @@ async def start_application(
     return StartApplicationResponse(application_id=application_id, status="tailoring_resume")
 
 
+@router.get("/live-screenshot/{application_id}")
+async def get_live_screenshot(
+    application_id: str,
+    user: Annotated[dict[str, Any], Depends(get_current_user)],
+    supabase: Annotated[Client, Depends(get_supabase_admin)],
+) -> Response:
+    """Return the latest live screenshot PNG for an actively submitting application."""
+    app_row = (
+        supabase.table("applications")
+        .select("live_screenshot_path, user_id")
+        .eq("id", application_id)
+        .eq("user_id", user["id"])
+        .single()
+        .execute()
+    )
+    if not app_row.data or not app_row.data.get("live_screenshot_path"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No live screenshot available")
+
+    path = app_row.data["live_screenshot_path"]
+    try:
+        png_bytes = supabase.storage.from_("generated-documents").download(path)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not fetch screenshot: {exc}") from exc
+
+    return Response(content=png_bytes, media_type="image/png")
+
+
 @router.post("/retry/{application_id}", response_model=StartApplicationResponse)
 async def retry_submission(
     application_id: str,
