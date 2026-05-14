@@ -16,9 +16,9 @@ import asyncio
 import logging
 import os
 import re
-import tempfile
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from playwright.async_api import Page
@@ -44,10 +44,12 @@ def _re(pattern: str) -> re.Pattern:
     return re.compile(pattern, re.IGNORECASE)
 
 
-_FIRST_NAME_RE = _re(r"\b(first[\s_-]?name|given[\s_-]?name|fname)\b")
-_LAST_NAME_RE = _re(r"\b(last[\s_-]?name|family[\s_-]?name|surname|lname)\b")
+# First / Last: accept the bare label too (Gravity Forms uses just "First"/"Last")
+_FIRST_NAME_RE = _re(r"\bfirst[\s_-]?(?:name)?\b|\bgiven[\s_-]?name\b|\bfname\b")
+_LAST_NAME_RE = _re(r"\blast[\s_-]?(?:name)?\b|\bfamily[\s_-]?name\b|\bsurname\b|\blname\b")
 _FULL_NAME_RE = _re(r"\b(full[\s_-]?name|your[\s_-]?name|^name$)\b")
 _EMAIL_RE = _re(r"\bemail\b|e-mail")
+_CONFIRM_EMAIL_RE = _re(r"\bconfirm[\s_-]?(?:your[\s_-]?)?(?:email|e-mail)\b|\b(?:email|e-mail)[\s_-]?confirm\b|\bre[\s_-]?(?:enter[\s_-]?)?email\b")
 _PHONE_RE = _re(r"\b(phone|mobile|cell|telephone)\b")
 _ADDR_RE = _re(r"\b(street|address[\s_-]?line[\s_-]?1?|addr1?)\b")
 _CITY_RE = _re(r"\b(city|locality|town)\b")
@@ -233,6 +235,7 @@ class PrefillCopilot(FormFiller):
     async def _field_metadata(self, el) -> dict | None:
         """Gather id/name/type/placeholder/label/aria-label/required for a field."""
         try:
+            tag = (await el.evaluate("e => e.tagName") or "").upper()
             id_ = (await el.get_attribute("id")) or ""
             name = (await el.get_attribute("name")) or ""
             type_ = (await el.get_attribute("type")) or ""
@@ -255,7 +258,7 @@ class PrefillCopilot(FormFiller):
         if not haystack:
             return None
 
-        key = self._classify_field(haystack, type_)
+        key = self._classify_field(haystack, type_, tag)
         if not key:
             return None
 
@@ -263,6 +266,7 @@ class PrefillCopilot(FormFiller):
             "id": id_,
             "name": name,
             "type": type_,
+            "tag": tag,
             "placeholder": placeholder,
             "aria_label": aria_label,
             "label": label,
@@ -272,7 +276,7 @@ class PrefillCopilot(FormFiller):
             "key": key,
         }
 
-    def _classify_field(self, haystack: str, type_: str) -> str | None:
+    def _classify_field(self, haystack: str, type_: str, tag: str = "") -> str | None:
         """Classify a field by its identifiers. Returns a known key or None."""
         if type_ == "email" or _EMAIL_RE.search(haystack):
             return "email"
@@ -313,6 +317,21 @@ class PrefillCopilot(FormFiller):
             return "start_date"
         if _COVER_LETTER_RE.search(haystack):
             return "cover_letter"
+
+        # Long-form (textarea) classifications. Only triggered for textareas so
+        # short single-line inputs don't get a paragraph stuffed into them.
+        if tag == "TEXTAREA":
+            lower = haystack.lower()
+            if any(p in lower for p in ("educat", "academic", "school", "degree", "university", "college")):
+                return "long_education"
+            if any(p in lower for p in ("current job", "current role", "current position", "currently work", "current employer", "responsibilit")):
+                return "long_current_job"
+            if any(p in lower for p in ("work experience", "professional experience", "relevant experience", "pertinent experience", "career history", "prior experience", "past experience")):
+                return "long_work_experience"
+            if any(p in lower for p in ("skills", "competenc", "technolog", "proficien")):
+                return "long_skills"
+            if any(p in lower for p in ("why", "motivat", "interest in", "tell us about", "about you", "describe yourself")):
+                return "long_motivation"
         return None
 
     def _value_for_field(self, meta: dict) -> str | None:
@@ -364,8 +383,76 @@ class PrefillCopilot(FormFiller):
                 return self.saved_answers.get("start_date") or None
             case "cover_letter":
                 return self.cover_letter_text or None
+            case "long_education":
+                return self._format_education() or None
+            case "long_current_job":
+                return self._format_current_job() or None
+            case "long_work_experience":
+                return self._format_work_experience() or None
+            case "long_skills":
+                skills = p.get("skills") or []
+                return ", ".join(skills[:40]) or None
+            case "long_motivation":
+                return self.cover_letter_text or p.get("summary") or None
             case _:
                 return None
+
+    def _format_education(self) -> str:
+        """Render profile.education as a short, readable block."""
+        edu = self.profile.get("education") or []
+        if not edu:
+            return ""
+        lines: list[str] = []
+        for e in edu[:3]:
+            deg = (e.get("degree") or "").strip()
+            inst = (e.get("institution") or e.get("school") or "").strip()
+            year = (e.get("graduation_year") or e.get("end_date") or "").strip()
+            entry = ", ".join(x for x in (deg, inst) if x)
+            if year:
+                entry = f"{entry} ({year})" if entry else year
+            if entry:
+                lines.append(entry)
+        return "\n".join(lines)
+
+    def _format_current_job(self) -> str:
+        """Render the most recent role as title + bullets."""
+        exp = self.profile.get("experience") or []
+        if not exp:
+            return ""
+        e = exp[0]
+        title = (e.get("title") or "").strip()
+        company = (e.get("company") or "").strip()
+        header = " at ".join(x for x in (title, company) if x)
+        bullets = e.get("bullets") or e.get("responsibilities") or e.get("highlights") or []
+        if isinstance(bullets, str):
+            return f"{header}\n\n{bullets}".strip()
+        body = "\n".join(f"- {b}" for b in bullets[:8])
+        return f"{header}\n{body}".strip() if body else header
+
+    def _format_work_experience(self) -> str:
+        """Render the candidate's full work history as a readable narrative."""
+        exp = self.profile.get("experience") or []
+        if not exp:
+            return ""
+        sections: list[str] = []
+        for e in exp[:5]:
+            title = (e.get("title") or "").strip()
+            company = (e.get("company") or "").strip()
+            start = (e.get("start_date") or "").strip()
+            end = (e.get("end_date") or "Present").strip()
+            header_parts = [p for p in (title, company) if p]
+            header = " at ".join(header_parts) if header_parts else "Role"
+            if start or end:
+                header = f"{header} ({start}–{end})"
+            bullets = e.get("bullets") or e.get("responsibilities") or e.get("highlights") or []
+            if isinstance(bullets, str):
+                sections.append(f"{header}\n{bullets}")
+            elif bullets:
+                body = "\n".join(f"- {b}" for b in bullets[:5])
+                sections.append(f"{header}\n{body}")
+            else:
+                sections.append(header)
+        return "\n\n".join(sections)
 
     async def _is_already_filled(self, el, meta: dict) -> bool:
         try:
@@ -418,6 +505,17 @@ class PrefillCopilot(FormFiller):
             pass
         return False
 
+    def _upload_dir(self) -> str:
+        """Persistent dir for uploaded files (kept so the user can verify)."""
+        base = Path(__file__).resolve().parents[2] / "agent_uploads" / (self._app_id or "unknown")
+        base.mkdir(parents=True, exist_ok=True)
+        return str(base)
+
+    def _candidate_slug(self) -> str:
+        full = (self.profile.get("full_name") or "candidate").strip()
+        cleaned = re.sub(r"[^A-Za-z0-9]+", "_", full).strip("_")
+        return cleaned or "candidate"
+
     async def _maybe_upload_resume(self) -> None:
         if not self.resume_pdf_bytes:
             return
@@ -434,19 +532,14 @@ class PrefillCopilot(FormFiller):
                 el = self.page.locator(sel).first
                 if await el.count() == 0:
                     continue
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                    tmp.write(self.resume_pdf_bytes)
-                    tmp_path = tmp.name
-                try:
-                    await el.set_input_files(tmp_path)
-                    logger.info("  ✓ Resume uploaded via %s (%d bytes)", sel, len(self.resume_pdf_bytes))
-                    self.form_responses["resume"] = f"[file:{len(self.resume_pdf_bytes)}b]"
-                    return
-                finally:
-                    try:
-                        os.unlink(tmp_path)
-                    except Exception:
-                        pass
+                out_name = f"{self._candidate_slug()}_Resume.pdf"
+                out_path = os.path.join(self._upload_dir(), out_name)
+                with open(out_path, "wb") as f:
+                    f.write(self.resume_pdf_bytes)
+                await el.set_input_files(out_path)
+                logger.info("  ✓ Resume uploaded (%d bytes) -> %s", len(self.resume_pdf_bytes), out_path)
+                self.form_responses["resume"] = out_path
+                return
             except Exception as exc:
                 logger.debug("  Resume upload failed for %s: %s", sel, exc)
         logger.info("  No resume file input found on page")
@@ -479,21 +572,14 @@ class PrefillCopilot(FormFiller):
                 el = self.page.locator(sel).first
                 if await el.count() == 0:
                     continue
-                with tempfile.NamedTemporaryFile(
-                    delete=False, suffix=".txt", mode="w", encoding="utf-8"
-                ) as tmp:
-                    tmp.write(self.cover_letter_text)
-                    tmp_path = tmp.name
-                try:
-                    await el.set_input_files(tmp_path)
-                    logger.info("  ✓ Cover letter uploaded as file")
-                    self.form_responses["cover_letter"] = "[file]"
-                    return
-                finally:
-                    try:
-                        os.unlink(tmp_path)
-                    except Exception:
-                        pass
+                out_name = f"{self._candidate_slug()}_cover_letter.txt"
+                out_path = os.path.join(self._upload_dir(), out_name)
+                with open(out_path, "w", encoding="utf-8") as f:
+                    f.write(self.cover_letter_text)
+                await el.set_input_files(out_path)
+                logger.info("  ✓ Cover letter uploaded -> %s", out_path)
+                self.form_responses["cover_letter"] = out_path
+                return
             except Exception as exc:
                 logger.debug("  Cover letter file upload failed: %s", exc)
 

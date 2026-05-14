@@ -10,6 +10,7 @@ import {
   Bell,
   Crosshair,
   Bookmark,
+  Link2,
   type LucideIcon,
 } from "lucide-react";
 import { pluginNavItems, pluginTabItems } from "@/plugins/registry";
@@ -23,6 +24,7 @@ export interface NavItem {
 const coreNavItems: NavItem[] = [
   { label: "Dashboard",    href: "/dashboard",                    icon: LayoutDashboard },
   { label: "Scout",        href: "/scout",                        icon: Crosshair       },
+  { label: "Import URL",   href: "/import",                       icon: Link2           },
   { label: "Job Queue",    href: "/queue",                        icon: Inbox           },
   { label: "Saved",        href: "/saved",                        icon: Bookmark        },
   { label: "Applications", href: "/applications",                 icon: FileText        },

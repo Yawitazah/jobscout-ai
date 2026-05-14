@@ -4,9 +4,9 @@ import asyncio
 import logging
 import os
 import re
-import tempfile
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from playwright.async_api import Page
@@ -327,66 +327,84 @@ class GreenhouseFiller(FormFiller):
         pass
 
     def _city_from_location(self) -> str:
+        """
+        Extract just the city from `profile.location`. Stripe's autocomplete
+        (and most Greenhouse location fields) returns no suggestions when fed
+        "Rock Hill SC" — it needs "Rock Hill". So we strip a trailing US state
+        code if present.
+        """
         loc = self.profile.get("location") or ""
-        return loc.split(",")[0].strip()
+        first = loc.split(",")[0].strip()
+        tokens = first.split()
+        if len(tokens) > 1 and tokens[-1].upper() in _US_STATE_CODES:
+            tokens = tokens[:-1]
+        return " ".join(tokens)
 
     async def _fill_location_with_autocomplete(self, city: str) -> bool:
         """
-        Greenhouse's Location (City) field is a Google Places–style autocomplete.
-        Just typing leaves raw text but no selected place — Greenhouse then
-        clears it on submit and shows "Please enter your location". We type,
-        wait for suggestions to render (often in the PARENT document, outside
-        the Greenhouse iframe), then click the first one. Keyboard fallback
-        uses the parent Page (Frames don't expose .keyboard).
+        Greenhouse's Location (City) is a react-select-backed Places autocomplete.
+        The dropdown only renders after a "human-like" interaction sequence:
+        triple-click to focus + select all, Delete to clear, then keyboard.type
+        with a real per-character delay, then a 2s wait for the suggestion list.
+        Suggestions live in `.select__option` (same class as other comboboxes)
+        but they only appear with this exact recipe — quick fill() or short
+        delays produce no dropdown at all.
         """
         if not city:
             return False
-        try:
+        state_full = _expand_state(self.profile.get("location") or "")
+
+        async def attempt() -> bool:
             el = self.page.locator(_LOCATION).first
             await el.wait_for(state="visible", timeout=5_000)
-            query = (self.profile.get("location") or city).strip().rstrip(",").strip()
-            await el.click()
-            await el.fill("")
-            await el.type(query, delay=30)
-            # Give the autocomplete time to query and render
-            await self.page.wait_for_timeout(1200)
+            await el.scroll_into_view_if_needed()
+            await el.click(click_count=3)
+            await self._orig_page.keyboard.press("Delete")
+            await self._orig_page.wait_for_timeout(150)
+            await self._orig_page.keyboard.type(city, delay=120)
 
-            # Google Places renders .pac-container outside iframes, in the
-            # top-level document. Check the parent page first, then the frame.
-            search_contexts = [self._orig_page, self.page]
-            option_selectors = [
-                ".pac-container .pac-item",
-                ".pac-item",
-                "li[role='option']",
-                "[role='option']",
-                ".select__option",
-                ".autocomplete-suggestion",
-                ".dropdown-menu .dropdown-item",
-            ]
-            for ctx in search_contexts:
-                for sel in option_selectors:
-                    try:
-                        loc = ctx.locator(sel).first
-                        if await loc.count() == 0:
-                            continue
-                        await loc.wait_for(state="visible", timeout=1_500)
-                        text = (await loc.text_content() or "").strip()
-                        await loc.click()
-                        logger.info("  Location autocomplete picked via %s → %r", sel, text)
-                        self.form_responses["location"] = text or query
-                        return True
-                    except Exception:
-                        continue
+            # Wait for the autocomplete dropdown to render (Stripe's location
+            # field hits an API; can take up to ~5 s on a slow request).
+            try:
+                await self.page.locator(".select__option").first.wait_for(
+                    state="visible", timeout=6_000
+                )
+            except Exception:
+                return False
 
-            # Fallback: parent Page's keyboard sends ArrowDown + Enter to the
-            # focused element (still the location input).
-            await el.focus()
-            await self._orig_page.keyboard.press("ArrowDown")
-            await self._orig_page.wait_for_timeout(250)
-            await self._orig_page.keyboard.press("Enter")
-            logger.info("  Location autocomplete picked via keyboard fallback")
-            self.form_responses["location"] = query
+            options = await self.page.locator(".select__option").all()
+            if not options:
+                return False
+
+            best = None
+            best_text = ""
+            for opt in options:
+                text = (await opt.text_content() or "").strip()
+                if not text:
+                    continue
+                t_lower = text.lower()
+                if state_full and state_full.lower() in t_lower and city.lower() in t_lower:
+                    best = opt
+                    best_text = text
+                    break
+            if best is None:
+                best = options[0]
+                best_text = (await best.text_content() or "").strip()
+
+            await best.click()
+            await self._orig_page.wait_for_timeout(400)
+            logger.info("  Location autocomplete picked: %r", best_text)
+            self.form_responses["location"] = best_text
             return True
+
+        try:
+            for attempt_no in range(1, 3):
+                if await attempt():
+                    return True
+                logger.info("  Location autocomplete: attempt %d found no options — retrying", attempt_no)
+                await self._orig_page.wait_for_timeout(700)
+            logger.warning("  Location autocomplete: gave up after 2 attempts")
+            return False
         except Exception as exc:
             logger.warning("  Location autocomplete failed: %s", exc)
             return False
@@ -397,17 +415,23 @@ class GreenhouseFiller(FormFiller):
 
     async def _react_select_fill(self, field_id: str, value: str) -> bool:
         """
-        Fill a react-select combobox by matching `value` against option text.
-        Filtering by typing doesn't reliably narrow the option list on every
-        Greenhouse build, so we iterate all visible options and pick the best
-        match: exact text → prefix → substring (in either direction). Falls
-        back to the first option only when no match exists.
+        Fill a react-select combobox by typing the value via real keystrokes
+        and clicking the best-matching option. Some Greenhouse instances
+        (Stripe's variant especially) ignore Playwright's `fill()` because it
+        sets value directly without firing input events — react-select then
+        treats the combobox as untouched. Real keyboard.type with a delay
+        triggers the dropdown reliably.
         """
         try:
-            await self.page.click(f'#{field_id}')
-            await self.page.wait_for_timeout(400)
-            await self.page.fill(f'#{field_id}', value)
-            await self.page.wait_for_timeout(400)
+            el = self.page.locator(f'#{field_id}').first
+            await el.click()
+            await self._orig_page.wait_for_timeout(300)
+            # Clear anything that's there
+            await el.click(click_count=3)
+            await self._orig_page.keyboard.press("Delete")
+            await self._orig_page.wait_for_timeout(150)
+            await self._orig_page.keyboard.type(value, delay=80)
+            await self._orig_page.wait_for_timeout(900)
             await self.page.locator(".select__option").first.wait_for(state="visible", timeout=3_000)
             opts = await self.page.locator(".select__option").all()
             if not opts:
@@ -740,24 +764,37 @@ class GreenhouseFiller(FormFiller):
     # File uploads
     # ------------------------------------------------------------------
 
+    def _upload_dir(self) -> str:
+        """
+        Persistent directory for files we upload to ATS forms. Files are kept
+        (not deleted) so the user can open and verify exactly what was sent.
+        Path: apps/api/agent_uploads/<app_id or 'unknown'>/
+        """
+        base = Path(__file__).resolve().parents[2] / "agent_uploads" / (self._app_id or "unknown")
+        base.mkdir(parents=True, exist_ok=True)
+        return str(base)
+
+    def _candidate_slug(self) -> str:
+        """Turn 'Lorenzo White' into 'Lorenzo_White' for use in filenames."""
+        full = (self.profile.get("full_name") or "candidate").strip()
+        cleaned = re.sub(r"[^A-Za-z0-9]+", "_", full).strip("_")
+        return cleaned or "candidate"
+
     async def _upload_text_as_file(self, selector: str, text: str, filename: str, label: str) -> bool:
         try:
             el = self.page.locator(selector).first
             await el.wait_for(state="attached", timeout=3_000)
-            with tempfile.NamedTemporaryFile(
-                delete=False, suffix=os.path.splitext(filename)[1],
-                mode="w", encoding="utf-8"
-            ) as tmp:
-                tmp.write(text)
-                tmp_path = tmp.name
-            try:
-                await el.set_input_files(tmp_path)
-                logger.info("  Uploaded %s as file (%d chars)", label, len(text))
-                self.form_responses[label] = f"[file:{filename}]"
-                return True
-            finally:
-                try: os.unlink(tmp_path)
-                except Exception: pass
+            # Use a meaningful filename like Lorenzo_White_cover_letter.txt and
+            # keep the file on disk so the user can open it to verify.
+            suffix = os.path.splitext(filename)[1] or ".txt"
+            out_name = f"{self._candidate_slug()}_{label}{suffix}"
+            out_path = os.path.join(self._upload_dir(), out_name)
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(text)
+            await el.set_input_files(out_path)
+            logger.info("  Uploaded %s (%d chars) -> %s", label, len(text), out_path)
+            self.form_responses[label] = out_path
+            return True
         except Exception as exc:
             logger.debug("Text-file upload %s skipped: %s", label, exc)
             return False
@@ -768,16 +805,13 @@ class GreenhouseFiller(FormFiller):
         try:
             el = self.page.locator(_RESUME_UPLOAD).first
             await el.wait_for(state="attached", timeout=5_000)
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                tmp.write(self.resume_pdf_bytes)
-                tmp_path = tmp.name
-            try:
-                await el.set_input_files(tmp_path)
-                logger.info("  Resume uploaded (%d bytes)", len(self.resume_pdf_bytes))
-                self.form_responses["resume"] = tmp_path
-            finally:
-                try: os.unlink(tmp_path)
-                except Exception: pass
+            out_name = f"{self._candidate_slug()}_Resume.pdf"
+            out_path = os.path.join(self._upload_dir(), out_name)
+            with open(out_path, "wb") as f:
+                f.write(self.resume_pdf_bytes)
+            await el.set_input_files(out_path)
+            logger.info("  Resume uploaded (%d bytes) -> %s", len(self.resume_pdf_bytes), out_path)
+            self.form_responses["resume"] = out_path
         except Exception as exc:
             logger.warning("  Resume upload skipped: %s", exc)
 
@@ -1038,6 +1072,32 @@ _NON_US_NAME_HINTS = (
     "POLAND", "PORTUGAL", "ROMANIA", "SWEDEN", "SWITZERLAND", "BELGIUM",
     "NETHERLANDS", "SINGAPORE", "ISRAEL", "NEW ZEALAND",
 )
+
+
+_US_STATE_NAMES = {
+    "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California",
+    "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware", "FL": "Florida", "GA": "Georgia",
+    "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois", "IN": "Indiana", "IA": "Iowa",
+    "KS": "Kansas", "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland",
+    "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi", "MO": "Missouri",
+    "MT": "Montana", "NE": "Nebraska", "NV": "Nevada", "NH": "New Hampshire", "NJ": "New Jersey",
+    "NM": "New Mexico", "NY": "New York", "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio",
+    "OK": "Oklahoma", "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina",
+    "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas", "UT": "Utah", "VT": "Vermont",
+    "VA": "Virginia", "WA": "Washington", "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
+    "DC": "District of Columbia",
+}
+
+
+def _expand_state(location: str) -> str:
+    """Find a US state code in `location` and return its full name (e.g. 'SC' → 'South Carolina')."""
+    if not location:
+        return ""
+    upper = location.upper()
+    for tok in re.findall(r"\b[A-Z]{2}\b", upper):
+        if tok in _US_STATE_NAMES:
+            return _US_STATE_NAMES[tok]
+    return ""
 
 
 def _profile_looks_us(profile: dict) -> bool:

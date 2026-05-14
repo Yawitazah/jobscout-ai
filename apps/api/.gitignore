@@ -1,0 +1,19 @@
+jobscout-agent.env
+
+# Agent's persistent upload staging dir (per-application copies of the
+# resume/cover-letter files actually sent to each ATS, kept for verification)
+agent_uploads/
+
+# Local agent run log
+agent.log
+
+# Debug screenshots / inspection scripts used during development
+form_state.png
+step1_top.png
+step2_location.png
+step3_typed.png
+loc_after_type.png
+loc_after_click.png
+after_run.png
+current.png
+inspect_form.py
