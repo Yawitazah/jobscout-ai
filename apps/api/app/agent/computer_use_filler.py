@@ -304,6 +304,12 @@ class ComputerUseFiller:
                 await asyncio.sleep(0.3)
                 return [{"type": "text", "text": f"Double-clicked ({x}, {y})"}]
 
+            elif action == "triple_click":
+                x, y = tool_input["coordinate"]
+                await self.page.mouse.click(x, y, click_count=3)
+                await asyncio.sleep(0.3)
+                return [{"type": "text", "text": f"Triple-clicked ({x}, {y})"}]
+
             elif action == "right_click":
                 x, y = tool_input["coordinate"]
                 await self.page.mouse.click(x, y, button="right")
@@ -325,23 +331,35 @@ class ComputerUseFiller:
 
             elif action == "type":
                 text = tool_input.get("text", "")
-                # Fast-fill via JS: set value + fire React-compatible events instantly
+                # Fast-fill via JS for standard input/textarea elements
                 filled = await self.page.evaluate(
                     """(text) => {
-                        const el = document.activeElement;
-                        if (!el) return false;
-                        const proto = el instanceof HTMLTextAreaElement
-                            ? HTMLTextAreaElement.prototype
-                            : HTMLInputElement.prototype;
-                        const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-                        if (setter) {
-                            setter.call(el, text);
-                        } else {
-                            el.value = text;
+                        try {
+                            const el = document.activeElement;
+                            if (!el) return false;
+                            if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+                                const proto = el instanceof HTMLTextAreaElement
+                                    ? HTMLTextAreaElement.prototype
+                                    : HTMLInputElement.prototype;
+                                const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+                                if (setter) {
+                                    setter.call(el, text);
+                                } else {
+                                    el.value = text;
+                                }
+                                el.dispatchEvent(new Event('input',  { bubbles: true }));
+                                el.dispatchEvent(new Event('change', { bubbles: true }));
+                                return true;
+                            }
+                            if (el.isContentEditable) {
+                                el.textContent = text;
+                                el.dispatchEvent(new Event('input',  { bubbles: true }));
+                                return true;
+                            }
+                            return false;
+                        } catch (e) {
+                            return false;
                         }
-                        el.dispatchEvent(new Event('input',  { bubbles: true }));
-                        el.dispatchEvent(new Event('change', { bubbles: true }));
-                        return true;
                     }""",
                     text,
                 )
@@ -352,8 +370,30 @@ class ComputerUseFiller:
 
             elif action == "key":
                 key = tool_input.get("text", "")
-                await self.page.keyboard.press(key)
-                return [{"type": "text", "text": f"Pressed {key}"}]
+                # Normalize key names: Playwright uses "Control" not "ctrl", etc.
+                _KEY_MAP = {
+                    "ctrl": "Control",
+                    "cmd": "Meta",
+                    "win": "Meta",
+                    "return": "Enter",
+                    "del": "Delete",
+                    "esc": "Escape",
+                    "backspace": "Backspace",
+                    "tab": "Tab",
+                    "space": "Space",
+                }
+                key_lower = key.lower()
+                if key_lower in _KEY_MAP:
+                    normalized = _KEY_MAP[key_lower]
+                elif "+" in key:
+                    # Compound key e.g. "ctrl+a" -> "Control+a"
+                    parts = key.split("+")
+                    parts = [_KEY_MAP.get(p.lower(), p) for p in parts]
+                    normalized = "+".join(parts)
+                else:
+                    normalized = key
+                await self.page.keyboard.press(normalized)
+                return [{"type": "text", "text": f"Pressed {normalized}"}]
 
             elif action == "scroll":
                 x, y = tool_input["coordinate"]
