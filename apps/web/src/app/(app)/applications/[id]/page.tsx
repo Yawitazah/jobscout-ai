@@ -600,7 +600,10 @@ function SubmissionTab({ app, applicationId }: { app: ApplicationDetail; applica
   useEffect(() => {
     if (!isSubmitting) return;
     setScreenshotError(false);
-    const interval = setInterval(() => setScreenshotTs(Date.now()), 3000);
+    const interval = setInterval(() => {
+      setScreenshotError(false);  // clear error so img re-renders and retries
+      setScreenshotTs(Date.now());
+    }, 3000);
     return () => clearInterval(interval);
   }, [isSubmitting]);
 
