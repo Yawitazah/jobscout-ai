@@ -12,6 +12,7 @@ import {
   Bookmark,
   type LucideIcon,
 } from "lucide-react";
+import { pluginNavItems, pluginTabItems } from "@/plugins/registry";
 
 export interface NavItem {
   label: string;
@@ -19,7 +20,7 @@ export interface NavItem {
   icon: LucideIcon;
 }
 
-export const navItems: NavItem[] = [
+const coreNavItems: NavItem[] = [
   { label: "Dashboard",    href: "/dashboard",                    icon: LayoutDashboard },
   { label: "Scout",        href: "/scout",                        icon: Crosshair       },
   { label: "Job Queue",    href: "/queue",                        icon: Inbox           },
@@ -33,15 +34,19 @@ export const navItems: NavItem[] = [
   { label: "Notifications",href: "/settings/notifications",       icon: Bell            },
 ];
 
+export const navItems: NavItem[] = [...coreNavItems, ...pluginNavItems];
+
 export interface TabItem {
   label: string;
   href: string | null;
   icon: LucideIcon;
 }
 
-export const tabItems: TabItem[] = [
+const coreTabItems: TabItem[] = [
   { label: "Queue",  href: "/queue",        icon: Inbox     },
   { label: "Saved",  href: "/saved",        icon: Bookmark  },
   { label: "Applied",href: "/applications", icon: FileText  },
   { label: "More",   href: null,            icon: LayoutDashboard },
 ];
+
+export const tabItems: TabItem[] = [...coreTabItems, ...pluginTabItems];

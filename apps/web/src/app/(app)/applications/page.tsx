@@ -13,6 +13,7 @@ import {
   Loader2,
   RefreshCw,
   Mail,
+  Hand,
 } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 
@@ -45,6 +46,7 @@ const APP_STATUS: Record<string, { label: string; color: string; icon: React.Ele
   writing_cover_letter: { label: "Writing cover letter…",   color: "text-yellow-700 bg-yellow-50", icon: Clock        },
   ready_to_submit:      { label: "Ready — run local agent", color: "text-blue-700 bg-blue-50",     icon: Send         },
   submitting:           { label: "Submitting…",             color: "text-yellow-700 bg-yellow-50", icon: Clock        },
+  awaiting_user_submit: { label: "Review & click Submit",   color: "text-indigo-700 bg-indigo-50", icon: Hand         },
   submitted:            { label: "Submitted ✓",             color: "text-green-700 bg-green-50",   icon: CheckCircle  },
   submit_failed:        { label: "Failed",                  color: "text-red-700 bg-red-50",       icon: XCircle      },
   more_info_needed:     { label: "More info needed",        color: "text-amber-700 bg-amber-50",   icon: AlertCircle  },
@@ -130,7 +132,7 @@ export default function ApplicationsPage() {
 
   const filtered = jobs.filter((j) => {
     const s = effectiveStatus(j.application);
-    if (filter === "in_progress") return ["queued", "draft", "tailoring_resume", "writing_cover_letter", "ready_to_submit", "submitting"].includes(s);
+    if (filter === "in_progress") return ["queued", "draft", "tailoring_resume", "writing_cover_letter", "ready_to_submit", "submitting", "awaiting_user_submit"].includes(s);
     if (filter === "submitted") return s === "submitted";
     if (filter === "failed") return ["submit_failed", "more_info_needed"].includes(s);
     return true;

@@ -1,41 +1,75 @@
 from __future__ import annotations
 
+import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
-from playwright.async_api import Browser, BrowserContext, Page, async_playwright
+from playwright.async_api import BrowserContext, Page, async_playwright
+
+logger = logging.getLogger(__name__)
+
+
+def _default_user_data_dir() -> Path:
+    """
+    Dedicated Chrome profile for the JobScout agent.
+    Kept separate from the user's primary Chrome so Playwright can launch even
+    while regular Chrome is open. The user logs in to LinkedIn / Indeed / etc.
+    in this profile once; cookies persist across runs.
+    """
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        return Path(local_app_data) / "JobScoutChromeProfile"
+    return Path.home() / ".config" / "jobscout-chrome-profile"
+
+
+USER_DATA_DIR = Path(os.environ.get("BROWSER_USER_DATA_DIR") or _default_user_data_dir())
 
 
 @asynccontextmanager
-async def get_page(headless: bool = True) -> AsyncGenerator[tuple[Browser, BrowserContext, Page], None]:
-    """Yield a stealth-hardened Playwright page, then clean up."""
+async def get_page(
+    headless: bool = False,
+) -> AsyncGenerator[tuple[None, BrowserContext, Page], None]:
+    """
+    Launch a persistent Chrome context using a dedicated user_data_dir.
+
+    Tuple shape is `(None, context, page)` to keep the existing caller signature
+    `async with get_page(...) as (_, __, page):` working unchanged. The first
+    slot was a Browser; persistent_context doesn't have a separate Browser
+    object, so it's None now.
+    """
+    USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    is_first_run = not any(USER_DATA_DIR.iterdir())
+    if is_first_run:
+        logger.info(
+            "First run detected — profile at %s is empty. "
+            "Log in to LinkedIn, Indeed, and any company portals when the browser opens; "
+            "cookies will persist for future runs.",
+            USER_DATA_DIR,
+        )
+
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(
+        context = await pw.chromium.launch_persistent_context(
+            str(USER_DATA_DIR),
+            channel="chrome",
             headless=headless,
+            viewport={"width": 1280, "height": 900},
+            locale="en-US",
             args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
                 "--disable-blink-features=AutomationControlled",
             ],
         )
-        context = await browser.new_context(
-            viewport={"width": 1280, "height": 900},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            locale="en-US",
-        )
-        try:
-            from playwright_stealth import stealth_async  # type: ignore[import-untyped]
-            page = await context.new_page()
-            await stealth_async(page)
-        except ImportError:
-            page = await context.new_page()
+
+        page = context.pages[0] if context.pages else await context.new_page()
 
         try:
-            yield browser, context, page
+            from playwright_stealth import stealth_async  # type: ignore[import-untyped]
+            await stealth_async(page)
+        except ImportError:
+            pass
+
+        try:
+            yield None, context, page
         finally:
             await context.close()
-            await browser.close()

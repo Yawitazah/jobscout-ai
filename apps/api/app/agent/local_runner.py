@@ -273,7 +273,7 @@ async def process_application(supabase, app: dict) -> None:
     if result.get("submitted"):
         supabase.table("applications").update({
             "status": "submitted",
-            "submission_method": "agent_auto",
+            "submission_method": result.get("submission_method", "agent_auto"),
             "confirmation_number": result.get("confirmation_number"),
             "confirmation_email": result.get("confirmation_email"),
             "form_responses": result.get("form_responses", {}),
@@ -283,6 +283,11 @@ async def process_application(supabase, app: dict) -> None:
             "updated_at": now,
         }).eq("id", app_id).execute()
         logger.info("  ✓  Submitted! confirmation=%s", result.get("confirmation_number"))
+    elif result.get("final_status_applied"):
+        # The filler already set its own terminal status (e.g. PrefillCopilot
+        # timed out waiting for the user to click Submit and left the row at
+        # awaiting_user_submit). Don't overwrite it with submit_failed.
+        logger.info("  Application %s left in awaiting_user_submit (user hasn't submitted yet)", app_id)
     else:
         _mark_failed(supabase, app_id, "filler reported submitted=False")
 
@@ -291,16 +296,18 @@ def _choose_filler(platform, page, profile, saved_answers, apply_url,
                    cover_letter_text, resume_pdf_bytes, job,
                    supabase=None, user_id=None, app_id=None):
     """
-    Tier 1: Playwright CSS filler for Greenhouse/Lever (zero AI cost).
-            The filler auto-detects company-hosted embeds (e.g. stripe.com?gh_jid=...)
-            and navigates to the canonical board URL automatically.
-    Tier 2: answer_resolver uses Claude Haiku only for individual unknown questions.
-    Tier 3: Claude computer-use (Haiku, 15 iterations) as absolute last resort.
+    Pure-script filler selection — no AI is used for form fill.
+
+    - greenhouse → GreenhouseFiller (auto-submit)
+    - lever      → LeverFiller via registry (auto-submit)
+    - anything else (linkedin, indeed, workday, custom company portals) →
+                   PrefillCopilot (pre-fills, then hands off to the user to
+                   click Submit; watches for thank-you URL to mark submitted)
     """
     if USE_FAST_PATH and platform == "greenhouse":
         try:
             from app.agent.adapters.greenhouse_filler import GreenhouseFiller
-            logger.info("  Using GreenhouseFiller (script-based, zero AI cost for form fill)")
+            logger.info("  Using GreenhouseFiller (auto-submit, script-based)")
             return GreenhouseFiller(
                 page=page,
                 profile=profile,
@@ -311,11 +318,12 @@ def _choose_filler(platform, page, profile, saved_answers, apply_url,
                 company_name=job.get("company_name", ""),
             )
         except Exception as exc:
-            logger.warning("GreenhouseFiller init failed, falling back to computer use: %s", exc)
+            logger.warning("GreenhouseFiller init failed, falling back to PrefillCopilot: %s", exc)
 
     if USE_FAST_PATH and platform == "lever":
         try:
             from app.agent.registry import get_filler
+            logger.info("  Using LeverFiller (auto-submit, script-based)")
             return get_filler(
                 platform=platform,
                 page=page,
@@ -326,14 +334,14 @@ def _choose_filler(platform, page, profile, saved_answers, apply_url,
                 resume_pdf_bytes=resume_pdf_bytes,
             )
         except Exception as exc:
-            logger.warning("LeverFiller init failed, falling back to computer use: %s", exc)
+            logger.warning("LeverFiller init failed, falling back to PrefillCopilot: %s", exc)
 
-    # Last resort: Claude computer-use (cheap Haiku model, capped at 15 iterations)
-    logger.info("  Falling back to ComputerUseFiller (platform=%s)", platform)
-    from app.agent.computer_use_filler import ComputerUseFiller
-    return ComputerUseFiller(
+    from app.agent.adapters.prefill_copilot import PrefillCopilot
+    logger.info("  Using PrefillCopilot (pre-fill only, manual submit; platform=%s)", platform)
+    return PrefillCopilot(
         page=page,
         profile=profile,
+        saved_answers=saved_answers,
         apply_url=apply_url,
         cover_letter_text=cover_letter_text,
         resume_pdf_bytes=resume_pdf_bytes,
