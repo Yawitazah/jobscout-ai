@@ -1,31 +1,55 @@
+"""
+Deterministic answer resolver for job application form questions.
+
+No AI calls. Answers come from:
+  1. saved_answers (user-provided, exact key match)
+  2. Profile field pattern matching on the question text
+  3. None — caller decides whether to skip or flag as missing
+"""
 from __future__ import annotations
 
-import json
-import logging
-import os
+import re
 
-import anthropic
 
-logger = logging.getLogger(__name__)
+# ---------------------------------------------------------------------------
+# Pattern → profile field mappings (ordered: more specific patterns first)
+# ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """\
-You are filling out a job application form on behalf of a candidate.
-Given the form question and the candidate's profile + saved answers, provide the best answer.
+_PATTERNS: list[tuple[list[str], str]] = [
+    # Name
+    (["first_name", "first name"],                      "first_name"),
+    (["last_name", "last name", "surname"],             "last_name"),
+    (["full_name", "full name", "name"],                "full_name"),
 
-Rules:
-- Only use information from the candidate's profile or saved answers.
-- If the answer is not in the profile, return null.
-- Keep answers concise and professional.
-- For yes/no questions, return "Yes" or "No".
-- For numeric questions, return only the number.
+    # Contact
+    (["email"],                                          "email"),
+    (["phone", "telephone", "mobile"],                  "phone"),
+    (["linkedin"],                                       "linkedin_url"),
+    (["github"],                                         "github_url"),
+    (["website", "portfolio", "personal url"],          "portfolio_url"),
 
-Output JSON exactly:
-{
-  "answer": "the answer string, or null if unknown",
-  "confidence": "high" | "medium" | "low",
-  "source": "profile" | "saved_answers" | "inferred" | "unknown"
-}
-"""
+    # Location
+    (["city", "location", "candidate-location",
+      "current city", "where do you live",
+      "where do you currently live"],                   "location"),
+    (["country where you currently reside",
+      "country you reside", "country of residence",
+      "current country"],                               "country"),
+
+    # Work history — current/most recent
+    (["current.*employer", "previous.*employer",
+      "current or previous employer",
+      "employer", "company name"],                      "current_company"),
+    (["current.*title", "previous.*title",
+      "current or previous.*title",
+      "job title", "position"],                         "current_title"),
+    (["years of experience", "how many years"],         "years_experience"),
+
+    # Misc
+    (["salary", "compensation", "expected salary"],     ""),   # leave blank
+    (["start date", "available to start",
+      "earliest start"],                                ""),   # leave blank
+]
 
 
 def resolve_answer(
@@ -34,56 +58,99 @@ def resolve_answer(
     profile: dict,
     saved_answers: dict[str, str],
 ) -> dict:
+    """
+    Return {"answer": str | None, "confidence": str, "source": str}.
+    answer=None means we cannot answer — caller should skip or flag missing.
+    """
+
+    # 1. Exact key match in saved answers
     if question_key in saved_answers:
-        return {
-            "answer": saved_answers[question_key],
-            "confidence": "high",
-            "source": "saved_answers",
-        }
+        return {"answer": saved_answers[question_key], "confidence": "high", "source": "saved_answers"}
 
-    user_msg = (
-        f"QUESTION KEY: {question_key}\n"
-        f"QUESTION TEXT: {question_text}\n\n"
-        f"CANDIDATE PROFILE:\n{json.dumps(_slim(profile), indent=2)}\n\n"
-        f"SAVED ANSWERS:\n{json.dumps(saved_answers, indent=2)}"
-    )
+    # 2. Fuzzy key match in saved answers (strip underscores / spaces)
+    norm_key = re.sub(r"[^a-z0-9]", "", question_key.lower())
+    for k, v in saved_answers.items():
+        if re.sub(r"[^a-z0-9]", "", k.lower()) == norm_key:
+            return {"answer": v, "confidence": "high", "source": "saved_answers"}
 
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-    resp = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=256,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_msg}],
-    )
-    text = resp.content[0].text.strip()
-    if text.startswith("```"):
-        parts = text.split("```")
-        text = parts[1] if len(parts) > 1 else text
-        if text.startswith("json"):
-            text = text[4:]
-    return json.loads(text.strip())
+    # 3. Pattern matching on question text + key
+    needle = (question_text + " " + question_key).lower()
+    for patterns, field in _PATTERNS:
+        for pat in patterns:
+            if re.search(pat, needle):
+                answer = _extract_field(field, profile)
+                if answer is not None:
+                    return {"answer": str(answer), "confidence": "medium", "source": "profile"}
+                # field matched but profile has no value — return None
+                return {"answer": None, "confidence": "low", "source": "unknown"}
+
+    return {"answer": None, "confidence": "low", "source": "unknown"}
 
 
-def _slim(profile: dict) -> dict:
-    return {
-        "full_name": profile.get("full_name"),
-        "email": profile.get("resume_email") or profile.get("email"),
-        "phone": profile.get("phone"),
-        "location": profile.get("location"),
-        "linkedin_url": profile.get("linkedin_url"),
-        "github_url": profile.get("github_url"),
-        "portfolio_url": profile.get("portfolio_url"),
-        "summary": profile.get("summary"),
-        "additional_context": profile.get("additional_context"),
-        "skills": profile.get("skills", [])[:20],
-        "experience": [
-            {
-                "title": e.get("title"),
-                "company": e.get("company"),
-                "start_date": e.get("start_date"),
-                "end_date": e.get("end_date"),
-            }
-            for e in (profile.get("experience") or [])[:5]
-        ],
-        "education": profile.get("education", []),
-    }
+# ---------------------------------------------------------------------------
+# Field extractors
+# ---------------------------------------------------------------------------
+
+def _extract_field(field: str, profile: dict) -> str | None:
+    if not field:
+        return None  # intentionally left blank (salary etc.)
+
+    if field == "first_name":
+        full = profile.get("full_name") or ""
+        parts = full.strip().split(" ", 1)
+        return parts[0] if parts[0] else None
+
+    if field == "last_name":
+        full = profile.get("full_name") or ""
+        parts = full.strip().split(" ", 1)
+        return parts[1] if len(parts) > 1 else None
+
+    if field == "full_name":
+        return profile.get("full_name") or None
+
+    if field == "email":
+        return profile.get("resume_email") or profile.get("email") or None
+
+    if field == "phone":
+        return profile.get("phone") or None
+
+    if field == "linkedin_url":
+        return profile.get("linkedin_url") or None
+
+    if field == "github_url":
+        return profile.get("github_url") or None
+
+    if field == "portfolio_url":
+        return profile.get("portfolio_url") or profile.get("github_url") or None
+
+    if field == "location":
+        loc = profile.get("location") or ""
+        # Return just the city portion (before first comma)
+        return loc.split(",")[0].strip() or None
+
+    if field == "country":
+        loc = profile.get("location") or ""
+        parts = [p.strip() for p in loc.split(",")]
+        # Last part is usually country or state
+        return parts[-1] if len(parts) > 1 else (parts[0] if parts else None)
+
+    if field == "current_company":
+        exp = (profile.get("experience") or [])
+        if exp:
+            return exp[0].get("company") or None
+        return None
+
+    if field == "current_title":
+        exp = (profile.get("experience") or [])
+        if exp:
+            return exp[0].get("title") or None
+        return None
+
+    if field == "years_experience":
+        exp = profile.get("experience") or []
+        if not exp:
+            return None
+        # Count unique years across all roles (rough estimate)
+        return str(min(len(exp) * 2, 10))
+
+    return profile.get(field) or None

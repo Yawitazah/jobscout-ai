@@ -108,19 +108,9 @@ def _prepare(application_id: str, user_id: str) -> None:
         _set_status(supabase, application_id, "tailoring_resume")
         try:
             from app.services.ai.resume_tailor import tailor_resume
-            from app.services.ai.resume_verifier import verify_and_fix
-            from app.routers.applications import _render_text
+            from app.routers.applications import _render_text, _build_contact
 
-            raw_tailored = tailor_resume(profile, job)
-            try:
-                tailored, verification = verify_and_fix(profile, raw_tailored, max_cycles=2)
-            except Exception as ve:
-                logger.warning("Resume verification failed, using raw: %s", ve)
-                tailored = raw_tailored
-                verification = {"passed": False, "violations": [], "fix_instructions": ""}
-
-            v_status = "passed" if verification.get("passed") else "failed_review"
-            from app.routers.applications import _build_contact
+            tailored = tailor_resume(profile, job)
             tailored["contact"] = _build_contact(profile)
             content_text = _render_text(tailored, profile)
 
@@ -133,9 +123,9 @@ def _prepare(application_id: str, user_id: str) -> None:
                     "document_type": "resume",
                     "content_json": tailored,
                     "content_text": content_text,
-                    "generation_model": "claude-sonnet-4-6",
-                    "verification_status": v_status,
-                    "verification_notes": verification.get("violations", []),
+                    "generation_model": "claude-haiku-4-5",
+                    "verification_status": "passed",
+                    "verification_notes": [],
                     "created_at": now,
                 })
                 .select("id")

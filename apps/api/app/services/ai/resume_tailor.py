@@ -115,13 +115,13 @@ def tailor_resume(profile: dict, job: dict) -> dict:
         f"Company: {job.get('company_name', '')}\n"
         f"Location: {job.get('location') or 'unspecified'}\n"
         f"Work mode: {job.get('work_mode') or 'unspecified'}\n"
-        f"Full job description:\n{(job.get('description') or '')[:10000]}"
+        f"Full job description:\n{(job.get('description') or '')[:4000]}"
     )
 
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     resp = client.messages.create(
-        model="claude-sonnet-4-6",  # Sonnet: same quality, ~5x cheaper than Opus
-        max_tokens=8000,
+        model="claude-haiku-4-5-20251001",
+        max_tokens=4096,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_msg}],
     )

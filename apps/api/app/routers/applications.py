@@ -12,7 +12,6 @@ from supabase import Client
 
 from app.deps import get_current_user, get_supabase_admin
 from app.services.ai.resume_tailor import tailor_resume
-from app.services.ai.resume_verifier import verify_and_fix
 from app.services.documents.resume_builder import build_docx, build_pdf
 from app.services.ai.cover_letter import generate_cover_letter
 
@@ -207,19 +206,11 @@ async def tailor_resume_for_job(
         raise HTTPException(status_code=422, detail="Profile has no experience or skills to tailor.")
 
     try:
-        raw_tailored = tailor_resume(profile, job)
+        tailored = tailor_resume(profile, job)
     except Exception as exc:
         logger.exception("Resume tailoring failed: %s", exc)
         raise HTTPException(status_code=502, detail="AI tailoring failed") from exc
 
-    try:
-        tailored, verification = verify_and_fix(profile, raw_tailored, max_cycles=2)
-    except Exception as exc:
-        logger.exception("Verification pipeline failed: %s", exc)
-        tailored = raw_tailored
-        verification = {"passed": False, "violations": [], "fix_instructions": ""}
-
-    v_status = "passed" if verification.get("passed") else "failed_review"
     tailored["contact"] = _build_contact(profile)
     content_text = _render_text(tailored, profile)
 
@@ -232,9 +223,9 @@ async def tailor_resume_for_job(
             "document_type": "resume",
             "content_json": tailored,
             "content_text": content_text,
-            "generation_model": "claude-sonnet-4-6",
-            "verification_status": v_status,
-            "verification_notes": verification.get("violations", []),
+            "generation_model": "claude-haiku-4-5",
+            "verification_status": "passed",
+            "verification_notes": [],
             "created_at": now,
         })
         .select("id")

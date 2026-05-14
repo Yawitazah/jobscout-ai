@@ -44,6 +44,7 @@ class GreenhouseFiller(FormFiller):
         self.resume_pdf_bytes = resume_pdf_bytes
         self.company_name = company_name
         self._orig_page = page  # may be replaced by iframe frame in _switch_to_greenhouse_iframe
+        self._missing_required: list[str] = []
 
     async def fill(self) -> None:
         await self.page.goto(self.apply_url, wait_until="domcontentloaded", timeout=30_000)
@@ -101,7 +102,7 @@ class GreenhouseFiller(FormFiller):
                 await self._upload_text_as_file(_COVER_LETTER_UPLOAD, self.cover_letter_text, "cover_letter.txt", "cover_letter")
 
         await self._upload_resume()
-        await self._fill_custom_questions()
+        self._missing_required = await self._fill_custom_questions()
 
     async def _resolve_greenhouse_url(self) -> str | None:
         """
@@ -343,8 +344,12 @@ class GreenhouseFiller(FormFiller):
         except Exception as exc:
             logger.warning("  Resume upload skipped: %s", exc)
 
-    async def _fill_custom_questions(self) -> None:
-        """Detect and fill Greenhouse custom questions using selectors + Haiku for unknowns."""
+    async def _fill_custom_questions(self) -> list[str]:
+        """
+        Fill Greenhouse custom questions from profile data only — no AI calls.
+        Returns a list of question labels that are required but could not be answered.
+        """
+        missing: list[str] = []
         questions = await self.page.locator(".field").all()
         for q in questions:
             try:
@@ -354,30 +359,40 @@ class GreenhouseFiller(FormFiller):
                     continue
 
                 question_key = _slugify(label_text)
+                is_required = "*" in label_text
 
-                # Skip fields we already filled above
+                # Skip fields already filled in the standard fill pass
                 if question_key in ("first_name", "last_name", "email", "phone",
-                                    "resume", "cover_letter", "linkedin", "website"):
+                                    "resume", "cover_letter", "linkedin", "website",
+                                    "location", "candidate_location"):
                     continue
 
-                input_el = q.locator("input[type=text], input[type=number], textarea, select").first
+                # Resolve from profile/saved_answers — no AI
+                result = resolve_answer(label_text, question_key, self.profile, self.saved_answers)
+                answer = result.get("answer")
 
-                tag = await input_el.evaluate("el => el.tagName.toLowerCase()")
-                if tag == "select":
-                    result = resolve_answer(label_text, question_key, self.profile, self.saved_answers)
-                    if result.get("answer"):
-                        await self._select_option(
-                            f'select[id="{await input_el.get_attribute("id")}"]',
-                            result["answer"],
-                            question_key,
-                        )
-                else:
-                    result = resolve_answer(label_text, question_key, self.profile, self.saved_answers)
-                    if result.get("answer"):
-                        await input_el.fill(result["answer"])
-                        self.form_responses[question_key] = result["answer"]
+                if answer:
+                    input_el = q.locator("input[type=text], input[type=number], textarea, select").first
+                    try:
+                        tag = await input_el.evaluate("el => el.tagName.toLowerCase()")
+                        if tag == "select":
+                            el_id = await input_el.get_attribute("id") or ""
+                            await self._select_option(f'select[id="{el_id}"]', answer, question_key)
+                        else:
+                            await input_el.fill(answer)
+                            self.form_responses[question_key] = answer
+                    except Exception as exc:
+                        logger.debug("Custom field fill failed (%s): %s", question_key, exc)
+                elif is_required:
+                    # Required field we cannot answer — track it
+                    clean_label = label_text.replace("*", "").strip()
+                    missing.append(f"{question_key} | {clean_label}")
+                    logger.info("  Required field with no answer: %s", clean_label)
+
             except Exception as exc:
-                logger.debug("Custom question fill skipped: %s", exc)
+                logger.debug("Custom question processing skipped: %s", exc)
+
+        return missing
 
     async def submit_with_proof(self) -> dict:
         log: list[dict] = []
@@ -387,17 +402,42 @@ class GreenhouseFiller(FormFiller):
 
         self._log_step(log, "navigate", self.apply_url)
 
+        # If required fields couldn't be filled, stop and request more info
+        if self._missing_required:
+            logger.info("  Stopping — %d required field(s) unanswered: %s",
+                        len(self._missing_required), self._missing_required)
+            return {
+                "submitted": False,
+                "missing_info": True,
+                "missing_questions": self._missing_required,
+                "confirmation_number": None,
+                "confirmation_email": None,
+                "screenshot_bytes": None,
+                "form_responses": self.form_responses,
+                "submission_log": log,
+            }
+
         submit_ok = await self._click(_SUBMIT, "submit")
         self._log_step(log, "submit_click", _SUBMIT, submit_ok)
 
         if submit_ok:
             try:
                 await self.page.wait_for_load_state("networkidle", timeout=15_000)
-                submitted = True
-                confirmation_number = await _extract_confirmation(self.page)
-                # Use _orig_page for screenshot (Frame objects don't have .screenshot())
-                screenshot_path = await capture(self._orig_page, "confirmation")
-                self._log_step(log, "confirmation_detected", confirmation_number or "none")
+                # Verify the page actually shows success — don't assume submit worked
+                page_text = await self.page.inner_text("body")
+                success_words = ["thank you", "application received", "successfully",
+                                 "submitted", "confirmation", "we'll be in touch"]
+                if any(w in page_text.lower() for w in success_words):
+                    submitted = True
+                    confirmation_number = await _extract_confirmation(self.page)
+                    screenshot_path = await capture(self._orig_page, "confirmation")
+                    self._log_step(log, "confirmation_detected", confirmation_number or "none")
+                    logger.info("  Success page confirmed")
+                else:
+                    # Page didn't change to a success state — likely a validation error
+                    screenshot_path = await capture(self._orig_page, "post_submit")
+                    self._log_step(log, "no_success_message", "page did not confirm submission", ok=False)
+                    logger.warning("  Submit clicked but no success message found on page")
             except Exception as exc:
                 self._log_step(log, "post_submit_wait_failed", str(exc), ok=False)
 
