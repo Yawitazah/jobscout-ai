@@ -35,6 +35,20 @@ in the profile but is not mentioned, implied, or adjacent to anything in the JD,
 lead with it. Don't pad. A skill or bullet earns its spot in the tailored resume only \
 by mapping to something the JD asks for. When in doubt, leave it out.
 
+ADDITIONAL SOURCES (treat as first-person testimony from the candidate, same trust level \
+as the structured profile — these are NOT separate people, they're the candidate writing \
+about themselves through different channels):
+  • `memories` — short facts/achievements the candidate has told us over time \
+    ("Grew newsletter 0→50k subscribers at X", etc.). Often contain numbers and stories \
+    you won't find in the structured experience entries. Mine these for resume bullets.
+  • `raw_resume_text` — the candidate's own original resume text. If the structured \
+    experience is sparse on a role the JD cares about, look here for additional detail.
+  • `past_application_answers` — Q&A the candidate has answered on previous applications \
+    (visa status, years of experience, salary expectations, etc.). Useful when the JD \
+    implicitly asks about similar topics.
+All three follow the same JD-anchoring rule: surface only what maps to THIS job. The \
+integrity rules still apply — don't fabricate, don't inflate.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 3 — WRITE THE RESUME
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -170,6 +184,11 @@ def _slim_profile(profile: dict) -> dict:
         "languages": profile.get("languages", []),
         # Free-form notes the candidate wrote about themselves — treat as first-person testimony
         "additional_context": profile.get("additional_context") or "",
+        # Added by profile_context.enrich_profile — keep tailoring and Scout
+        # on a single source of truth.
+        "memories": profile.get("memories") or [],
+        "raw_resume_text": profile.get("raw_resume_text") or "",
+        "past_application_answers": profile.get("past_application_answers") or [],
     }
     # Strip None values to keep prompt clean
     return {k: v for k, v in slim.items() if v not in (None, [], "")}

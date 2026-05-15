@@ -58,6 +58,16 @@ do not feature it. No filler. A profile achievement earns mention in the letter 
 when it maps to a stated need in the JD. Three tight, JD-anchored proof points beat
 six unrelated ones every time.
 
+ADDITIONAL SOURCES (same trust level as the structured profile — all first-person
+testimony from the candidate):
+  • `memories` — short facts/achievements the candidate has shared over time. Often
+    the best source of concrete numbers and stories for proof paragraphs.
+  • `raw_resume_text` — the candidate's original uploaded resume. Look here for detail
+    when the structured experience is thin on a role the JD cares about.
+  • `past_application_answers` — Q&A from prior applications.
+Mine these the same way you mine the structured profile, with the same JD-anchoring rule.
+Don't fabricate, don't inflate.
+
 WORDS TO AVOID (corporate clichés — they get flagged and look junior):
 passionate, ninja, rockstar, guru, synergy, leverage, utilize, utilise, dynamic,
 innovative, thought leader, game changer, game-changer, disruptive, holistic,
@@ -129,5 +139,10 @@ def _slim(profile: dict) -> dict:
         "certifications": profile.get("certifications", []),
         "projects": profile.get("projects", []),
         "additional_context": profile.get("additional_context") or "",
+        # Same enrichment surface as resume_tailor — keep Scout and tailoring
+        # on one brain.
+        "memories": profile.get("memories") or [],
+        "raw_resume_text": profile.get("raw_resume_text") or "",
+        "past_application_answers": profile.get("past_application_answers") or [],
     }
     return {k: v for k, v in slim.items() if v not in (None, [], "")}

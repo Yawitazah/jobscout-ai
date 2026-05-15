@@ -96,7 +96,10 @@ def _prepare(application_id: str, user_id: str) -> None:
     if not profile_row.data:
         _mark_failed(supabase, application_id, "profile not found")
         return
-    profile = profile_row.data
+    # Augment the profile with memories, raw resume text, and past application
+    # answers so tailoring sees everything Scout sees (one source of truth).
+    from app.services.ai.profile_context import enrich_profile
+    profile = enrich_profile(profile_row.data, user_id, supabase)
 
     # ------------------------------------------------------------------ #
     # 2. Tailor resume (if not already done)

@@ -205,6 +205,11 @@ async def tailor_resume_for_job(
     if not profile.get("experience") and not profile.get("skills"):
         raise HTTPException(status_code=422, detail="Profile has no experience or skills to tailor.")
 
+    # Augment with memories, raw resume text, past answers so tailoring sees
+    # the same picture Scout does.
+    from app.services.ai.profile_context import enrich_profile
+    profile = enrich_profile(profile, user["id"], supabase)
+
     try:
         tailored = tailor_resume(profile, job)
     except Exception as exc:
@@ -356,8 +361,13 @@ async def generate_cover_letter_for_job(
     if not profile_row.data:
         raise HTTPException(status_code=422, detail="Profile not found. Upload a resume first.")
 
+    # Same enrichment used for resume tailoring — keeps Scout and tailoring
+    # on a single brain.
+    from app.services.ai.profile_context import enrich_profile
+    enriched_profile = enrich_profile(profile_row.data, user["id"], supabase)
+
     try:
-        result = generate_cover_letter(profile_row.data, job)
+        result = generate_cover_letter(enriched_profile, job)
     except Exception as exc:
         logger.exception("Cover letter generation failed: %s", exc)
         raise HTTPException(status_code=502, detail="AI generation failed") from exc
