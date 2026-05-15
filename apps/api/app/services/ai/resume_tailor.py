@@ -263,7 +263,15 @@ def tailor_resume(profile: dict, job: dict) -> dict:
 
     # Final guard: if the AI ignored MUST_INCLUDE_SKILLS, force them in.
     if must_include:
-        result["skills"] = _force_must_include(result.get("skills") or [], must_include)
+        before = list(result.get("skills") or [])
+        result["skills"] = _force_must_include(before, must_include)
+        added = [s for s in result["skills"] if s not in before]
+        if added:
+            import logging
+            logging.getLogger(__name__).info(
+                "tailor_resume: force-appended %d JD-required skill(s) the AI omitted: %s",
+                len(added), added,
+            )
     return result
 
 
@@ -329,13 +337,20 @@ def _find_matching_profile_skill(target: str, profile: dict) -> str | None:
 
     # 3. Distinctive-token match. Keep 2-letter tokens (AI, ML, GA, JS, etc.)
     #    since they're real tool names; filter stopwords by membership only.
+    #    Use word-boundary matching for short tokens so "ai" doesn't match
+    #    inside "paid" / "rain" / "captain".
     tokens = [
         t for t in re.findall(r"\w+", target_lower)
         if len(t) >= 2 and t not in _TOOL_MATCH_STOPWORDS
     ]
+    short_tokens = {t for t in tokens if len(t) <= 3}
+    long_tokens = {t for t in tokens if len(t) > 3}
+    short_patterns = [re.compile(rf"\b{re.escape(t)}\b", re.IGNORECASE) for t in short_tokens]
     for skill in skills:
         sl = skill.lower()
-        if any(tok in sl for tok in tokens):
+        if any(tok in sl for tok in long_tokens):
+            return skill
+        if any(p.search(skill) for p in short_patterns):
             return skill
 
     # 4. Fall back to experience descriptions
