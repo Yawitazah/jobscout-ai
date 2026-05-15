@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 import anthropic
 
@@ -223,15 +224,25 @@ Return ONLY valid JSON, no markdown fences, no commentary:
 
 
 def tailor_resume(profile: dict, job: dict) -> dict:
-    user_msg = (
-        f"CANDIDATE PROFILE:\n{json.dumps(_slim_profile(profile), indent=2)}\n\n"
-        f"TARGET JOB:\n"
-        f"Title: {job.get('title', '')}\n"
-        f"Company: {job.get('company_name', '')}\n"
+    jd_text = (job.get('description') or '')[:4000]
+    must_include = _compute_must_include_tools(profile, jd_text)
+
+    user_msg_parts = [
+        f"CANDIDATE PROFILE:\n{json.dumps(_slim_profile(profile), indent=2)}",
+        f"TARGET JOB:\nTitle: {job.get('title', '')}\nCompany: {job.get('company_name', '')}\n"
         f"Location: {job.get('location') or 'unspecified'}\n"
         f"Work mode: {job.get('work_mode') or 'unspecified'}\n"
-        f"Full job description:\n{(job.get('description') or '')[:4000]}"
-    )
+        f"Full job description:\n{jd_text}",
+    ]
+    if must_include:
+        user_msg_parts.append(
+            "MUST_INCLUDE_SKILLS — the JD explicitly requires/prefers these tools, and "
+            "the candidate's profile confirms they have them. They MUST appear verbatim "
+            "in your `skills` output (each can be a standalone entry or grouped within "
+            "another entry, but the literal token must be present):\n"
+            f"{json.dumps(must_include)}"
+        )
+    user_msg = "\n\n".join(user_msg_parts)
 
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     resp = client.messages.create(
@@ -248,7 +259,119 @@ def tailor_resume(profile: dict, job: dict) -> dict:
         if text.startswith("json"):
             text = text[4:]
 
-    return json.loads(text.strip())
+    result = json.loads(text.strip())
+
+    # Final guard: if the AI ignored MUST_INCLUDE_SKILLS, force them in.
+    if must_include:
+        result["skills"] = _force_must_include(result.get("skills") or [], must_include)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# JD-required-tool extraction + matching against profile
+# ---------------------------------------------------------------------------
+
+_TOOL_MATCH_STOPWORDS = frozenset({
+    "the", "and", "or", "a", "an", "of", "for", "with", "tool", "tools",
+    "platform", "platforms", "comparable", "required", "preferred",
+    "must", "have", "experience", "knowledge", "expertise",
+})
+
+
+def _extract_jd_required_tools(jd_text: str) -> list[str]:
+    """
+    Pull tool/skill names from JD lines with explicit (required) / (preferred) /
+    (must have) markers. Examples it catches:
+      - "WordPress (required)"
+      - "ChatGPT or comparable AI platform (required)"
+      - "SEMRush (preferred)"
+    """
+    if not jd_text:
+        return []
+    out: list[str] = []
+    pattern = re.compile(r"^(.+?)\s*\((required|preferred|must[ -]have)\)\s*$", re.IGNORECASE)
+    for line in jd_text.splitlines():
+        s = line.strip().lstrip("-•*•").strip()
+        m = pattern.match(s)
+        if m:
+            name = m.group(1).strip().strip(":").strip()
+            if name and name not in out:
+                out.append(name)
+    return out
+
+
+def _find_matching_profile_skill(target: str, profile: dict) -> str | None:
+    """
+    Does the candidate have something matching this JD tool? Looks across
+    profile.skills (and falls back to experience.description text). Returns
+    the matched profile skill / None.
+    """
+    if not target:
+        return None
+    target_lower = target.lower()
+    skills = profile.get("skills") or []
+
+    # 1. Direct substring match on full target
+    for skill in skills:
+        sl = skill.lower()
+        if target_lower in sl or sl in target_lower:
+            return skill
+
+    # 2. Split alternatives on " or " / "/" — match any branch
+    for cand in re.split(r"\s+or\s+|/", target_lower):
+        cand = cand.strip()
+        if not cand:
+            continue
+        for skill in skills:
+            sl = skill.lower()
+            if cand in sl or sl in cand:
+                return skill
+
+    # 3. Distinctive-token match. Keep 2-letter tokens (AI, ML, GA, JS, etc.)
+    #    since they're real tool names; filter stopwords by membership only.
+    tokens = [
+        t for t in re.findall(r"\w+", target_lower)
+        if len(t) >= 2 and t not in _TOOL_MATCH_STOPWORDS
+    ]
+    for skill in skills:
+        sl = skill.lower()
+        if any(tok in sl for tok in tokens):
+            return skill
+
+    # 4. Fall back to experience descriptions
+    for role in (profile.get("experience") or []):
+        desc = (role.get("description") or "").lower()
+        if any(tok in desc for tok in tokens):
+            return target  # candidate has it in prose; surface using the JD's name
+
+    return None
+
+
+def _compute_must_include_tools(profile: dict, jd_text: str) -> list[str]:
+    """
+    Return a list of tool names to FORCE into the tailored skills list. Each
+    item is either the candidate's exact profile-skill string (preferred so
+    the resume mirrors how they describe it) or the JD's name when the
+    candidate has it only in prose.
+    """
+    requirements = _extract_jd_required_tools(jd_text)
+    out: list[str] = []
+    for req in requirements:
+        match = _find_matching_profile_skill(req, profile)
+        if match and match not in out:
+            out.append(match)
+    return out
+
+
+def _force_must_include(output_skills: list[str], must_include: list[str]) -> list[str]:
+    """If any must-include skill is missing from output, append it."""
+    out = list(output_skills)
+    out_blob = " | ".join(s.lower() for s in out)
+    for must in must_include:
+        if must.lower() not in out_blob:
+            out.append(must)
+            out_blob = " | ".join(s.lower() for s in out)
+    return out
 
 
 def _slim_profile(profile: dict) -> dict:
