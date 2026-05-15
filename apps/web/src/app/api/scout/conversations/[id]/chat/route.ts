@@ -663,9 +663,24 @@ export async function POST(req: NextRequest, { params }: Params) {
           ];
 
           const apiStream = ai.messages.stream({
-            model: "claude-sonnet-4-5",
+            // Haiku 4.5 is ~4× cheaper than Sonnet 4.5 for chat-style use and
+            // handles "tell me about my saved jobs" comfortably with the
+            // structured context we hand it.
+            model: "claude-haiku-4-5-20251001",
             max_tokens: 8192,
-            system: systemPrompt,
+            // Prompt caching: the system block is large (profile + 30
+            // memories + 20 jobs + resume + instructions) but stable across
+            // a 5-minute window. Marking it cache_control: ephemeral makes
+            // every follow-up message in a session read it for ~10% the
+            // normal input cost. First message in a session still pays full
+            // input price; everything else is cached.
+            system: [
+              {
+                type: "text",
+                text: systemPrompt,
+                cache_control: { type: "ephemeral" },
+              },
+            ],
             tools,
             messages: currentMessages,
           } as Parameters<typeof ai.messages.stream>[0]);
