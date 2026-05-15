@@ -138,6 +138,39 @@ ABSOLUTE INTEGRITY RULES
 5. Reframing is encouraged; fabricating is not. Sharpen and elevate — don't invent.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PRE-FLIGHT CHECKLIST (mandatory)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Before returning JSON, verify each item. If any check fails, fix the output
+before returning. This is not optional.
+
+  [1] Summary opener: the first 1-3 words of `summary` describe the JD's role
+      type, not the profile's broadest identity. ("Enrollment Marketing
+      Manager…" or "Marketing leader…", not "CRM Systems Builder…" for a
+      marketing role).
+
+  [2] Skills list contains ≤ 15 entries and is ordered by JD relevance.
+
+  [3] PRODUCT-NAME WHITELIST: every specific product name appearing in
+      `summary`, `skills`, or `experience[*].bullets` MUST be a product the
+      JD explicitly named. If the JD says "Salesforce CRM" and "HubSpot",
+      you may use those names. You may NOT introduce Privyr, GoHighLevel,
+      Wix CRM, Shopify CRM, Pipedrive, Zoho, Monday.com, or any other
+      specific product name unless the JD wrote it verbatim. Generic
+      category names ("CRM", "email platform", "analytics tool") are fine.
+
+  [4] REQUIRED-TOOL COVERAGE: for every tool the JD lists as required,
+      preferred, or in a tools/skills callout, confirm it's either in the
+      skills list (if the candidate has it) or absent from the entire
+      candidate profile (if they don't). The skills list should not be
+      missing a required tool the candidate actually has.
+
+  [5] No words from the WORDS TO AVOID list below appear anywhere.
+
+  [6] Topic prominence in resume matches topic prominence in JD. A topic
+      with one passing mention in the JD does NOT appear in the summary
+      and gets at most one skills entry.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 LANGUAGE — WORDS TO AVOID
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Do not use these in summary or bullets (they signal junior writing and get flagged):

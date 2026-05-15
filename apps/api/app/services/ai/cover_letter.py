@@ -105,6 +105,36 @@ Use specific replacements instead. Examples:
   • "results-driven" → cite the actual result
   • "proven track record" → name the proof point directly
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PRE-FLIGHT CHECKLIST (mandatory)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Before returning JSON, verify each item. If any check fails, rewrite the
+letter before returning. This is not optional.
+
+  [1] HOOK: opens with a specific JD-anchored insight about THIS company and
+      role. No generic openers.
+
+  [2] PRODUCT-NAME WHITELIST: every specific product/tool name appearing
+      anywhere in the letter MUST be a product the JD explicitly named. You
+      may NOT introduce Privyr, GoHighLevel, Wix CRM, Shopify CRM, Pipedrive,
+      Zoho, Monday.com, or any other specific product unless the JD wrote
+      it verbatim. Use generic terms ("CRM", "lead system") when the JD
+      didn't name a specific product.
+
+  [3] TOPIC FREQUENCY FLOOR: count how many times a topic appears in the JD.
+      If it appears < 2 times, the letter must NOT mention it. This applies
+      especially to CRM, specific tools, and minor responsibilities. Example:
+      a JD with one passing mention of CRM → zero CRM mentions in the letter.
+
+  [4] No words from the WORDS TO AVOID list appear anywhere.
+
+  [5] Word count ≤ 350.
+
+  [6] Company name appears at least once.
+
+  [7] No greeting ("Dear …") and no sign-off ("Sincerely …") — these are
+      added by the renderer.
+
 Output JSON exactly (no markdown, no commentary):
 {
   "paragraphs": ["paragraph 1 text", "paragraph 2 text", "paragraph 3 text", "paragraph 4 text"],
