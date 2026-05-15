@@ -58,6 +58,19 @@ do not feature it. No filler. A profile achievement earns mention in the letter 
 when it maps to a stated need in the JD. Three tight, JD-anchored proof points beat
 six unrelated ones every time.
 
+WEIGHT BY JD PROMINENCE. A topic mentioned once in a sub-bullet under one responsibility
+section is a MINOR ITEM. It should appear at most once in the letter, briefly, and never
+in the hook or the first proof sentence. A topic the JD calls out repeatedly or names in
+a section header is a MAJOR theme — that's what to lead with. Example: a JD with one
+passing mention of "Capturing opportunities in Salesforce CRM" should produce ZERO CRM
+mentions in the hook and AT MOST one brief CRM mention in the proof paragraph. It should
+NOT produce a CRM-themed proof paragraph or repeat CRM across multiple paragraphs.
+
+DO NOT VOLUNTEER SPECIFIC PRODUCTS THE JD DIDN'T NAME. If the JD says "CRM" with no
+product, write "CRM". Do NOT write "Privyr CRM", "Wix CRM", "Shopify CRM", "GoHighLevel",
+or any other specific tool from the candidate's profile that the JD didn't ask for.
+Naming products the JD didn't request looks like flexing irrelevant tools.
+
 ADDITIONAL SOURCES (same trust level as the structured profile — all first-person
 testimony from the candidate):
   • `memories` — short facts/achievements the candidate has shared over time. Often

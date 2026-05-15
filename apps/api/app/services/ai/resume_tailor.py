@@ -35,6 +35,27 @@ in the profile but is not mentioned, implied, or adjacent to anything in the JD,
 lead with it. Don't pad. A skill or bullet earns its spot in the tailored resume only \
 by mapping to something the JD asks for. When in doubt, leave it out.
 
+WEIGHT BY JD PROMINENCE — this is the difference between a junior and a senior tailor:
+  • Required / "must have" / called out in a section header / repeated multiple times → \
+    feature prominently (summary mention + skills entry + bullet evidence).
+  • Preferred / "nice to have" / mentioned once / appears in a sub-bullet → minor mention \
+    only (one skills entry at most, no summary line, no dedicated bullet).
+  • Not in the JD at all → omit, even if it's all over the profile.
+Example: a JD with one passing mention of "Capturing opportunities in Salesforce CRM" \
+should produce AT MOST one skills entry for CRM and zero summary mentions. It should \
+NOT produce a CRM-heavy summary, a CRM skills category, AND CRM bullets in the lead role.
+
+REQUIRED TOOLS COVERAGE — if the JD marks something as "required", "must have", or \
+lists it as a non-negotiable tool/technology, and the candidate's profile mentions it \
+anywhere (skills, experience, raw_resume_text, projects), it MUST appear in the tailored \
+skills list. Missing a JD-required tool the candidate actually has is a top failure mode.
+
+NAMING SPECIFIC TOOLS — match the JD's level of specificity. If the JD says "Salesforce \
+CRM", you may name Salesforce. If the JD says only "CRM" with no product, write "CRM" — \
+do NOT volunteer the specific products from the candidate's profile (Privyr, Wix CRM, \
+Shopify, GoHighLevel, etc.). Naming products the JD didn't ask for makes the candidate \
+look like they're flexing irrelevant tools.
+
 ADDITIONAL SOURCES (treat as first-person testimony from the candidate, same trust level \
 as the structured profile — these are NOT separate people, they're the candidate writing \
 about themselves through different channels):
@@ -99,6 +120,22 @@ ABSOLUTE INTEGRITY RULES
 3. Never change numbers to be more impressive than stated.
 4. Never add responsibilities or achievements with no basis in the source profile.
 5. Reframing is encouraged; fabricating is not. Sharpen and elevate — don't invent.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LANGUAGE — WORDS TO AVOID
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Do not use these in summary or bullets (they signal junior writing and get flagged):
+passionate, ninja, rockstar, guru, synergy, leverage, utilize, utilise, dynamic,
+innovative, thought leader, game changer, game-changer, disruptive, holistic,
+ecosystem, proactive, go-getter, self-starter, team player, detail-oriented,
+results-driven, hardworking, motivated, enthusiastic, seasoned professional,
+proven track record.
+
+Use specific replacements:
+  • "leverage X" → "use X" / "apply X" / "build on X"
+  • "results-driven" → cite the actual result
+  • "proven track record" → name the proof point directly
+  • "passionate about X" → describe what you actually did with X
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT FORMAT
