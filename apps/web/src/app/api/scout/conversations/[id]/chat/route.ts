@@ -18,7 +18,7 @@ function getAdmin() {
 async function loadUserContext(userId: string): Promise<string> {
   const admin = getAdmin();
 
-  const [profileRes, prefsRes, resumeRes, memoriesRes] = await Promise.all([
+  const [profileRes, prefsRes, resumeRes, memoriesRes, jobsRes] = await Promise.all([
     admin
       .from("profiles")
       .select("full_name, email, phone, location, summary, skills, experience, education, certifications, projects, languages, linkedin_url, github_url, portfolio_url, additional_context")
@@ -43,12 +43,30 @@ async function loadUserContext(userId: string): Promise<string> {
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(30),
+    // The user's saved/approved jobs and their applications — so Scout knows
+    // about positions imported via URL or approved from a previous chat, not
+    // just what was discussed in this conversation.
+    admin
+      .from("user_jobs")
+      .select(`
+        status,
+        score,
+        decision_source,
+        reviewed_at,
+        job:jobs(title, source_url, source_platform, location, company:companies(name)),
+        applications(id, status, submitted_at, confirmation_number, missing_questions)
+      `)
+      .eq("user_id", userId)
+      .in("status", ["approved", "pending", "saved"])
+      .order("scored_at", { ascending: false })
+      .limit(20),
   ]);
 
   const profile = profileRes.data;
   const prefs = prefsRes.data;
   const resume = resumeRes.data;
   const memories = memoriesRes.data ?? [];
+  const userJobs = jobsRes.data ?? [];
 
   const lines: string[] = ["=== WHAT YOU KNOW ABOUT THIS USER ===", ""];
 
@@ -159,6 +177,43 @@ async function loadUserContext(userId: string): Promise<string> {
     lines.push("", "Saved memories / facts about this user (from prior conversations):");
     for (const m of memories) {
       lines.push(`  • ${m.content}`);
+    }
+  }
+
+  // Saved / approved jobs + their applications. Critical so Scout doesn't say
+  // "I don't see that job" when the user references something imported via
+  // URL or approved in a prior chat.
+  if (userJobs.length > 0) {
+    lines.push("", "Saved jobs & applications (this user's current pipeline):");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const uj of userJobs as any[]) {
+      const job = uj.job;
+      if (!job) continue;
+      const company = job.company?.name ?? "Unknown company";
+      const platform = job.source_platform ?? "custom";
+      const source = uj.decision_source ?? "auto";
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const apps = (uj.applications ?? []) as any[];
+      const appsByRecency = apps.slice().sort((a, b) =>
+        (b.submitted_at ?? "").localeCompare(a.submitted_at ?? "")
+      );
+      const latest = appsByRecency[0];
+      const appPart = latest
+        ? ` → application: ${latest.status}${
+            latest.confirmation_number ? ` (confirmation ${latest.confirmation_number})` : ""
+          }${
+            Array.isArray(latest.missing_questions) && latest.missing_questions.length > 0
+              ? ` | ${latest.missing_questions.length} question(s) need answers`
+              : ""
+          }`
+        : " → no application yet";
+      const decisionLabel = source === "manual" ? "manually saved" : `${uj.status}`;
+      lines.push(
+        `  • [${decisionLabel}] ${job.title} @ ${company} (${platform})${appPart}`,
+      );
+      if (job.source_url) {
+        lines.push(`      ${job.source_url}`);
+      }
     }
   }
 
