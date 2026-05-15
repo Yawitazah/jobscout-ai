@@ -49,6 +49,21 @@ RULES:
 • The letter must feel hand-crafted for THIS company and THIS role — not a template.
 • Use the company name at least once by name.
 
+WORDS TO AVOID (corporate clichés — they get flagged and look junior):
+passionate, ninja, rockstar, guru, synergy, leverage, utilize, utilise, dynamic,
+innovative, thought leader, game changer, game-changer, disruptive, holistic,
+ecosystem, proactive, go-getter, self-starter, team player, detail-oriented,
+results-driven, hardworking, motivated, enthusiastic, seasoned professional,
+proven track record.
+
+Use specific replacements instead. Examples:
+  • "leverage X" → "use X" / "apply X" / "build on X"
+  • "dynamic CMS systems" → "custom-built CMS" / "modular CMS"
+  • "innovative" → name the specific thing and what's new about it
+  • "passionate about X" → describe what you actually did with X
+  • "results-driven" → cite the actual result
+  • "proven track record" → name the proof point directly
+
 Output JSON exactly (no markdown, no commentary):
 {
   "paragraphs": ["paragraph 1 text", "paragraph 2 text", "paragraph 3 text", "paragraph 4 text"],
