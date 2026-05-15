@@ -61,10 +61,19 @@ six unrelated ones every time.
 WEIGHT BY JD PROMINENCE. A topic mentioned once in a sub-bullet under one responsibility
 section is a MINOR ITEM. It should appear at most once in the letter, briefly, and never
 in the hook or the first proof sentence. A topic the JD calls out repeatedly or names in
-a section header is a MAJOR theme — that's what to lead with. Example: a JD with one
-passing mention of "Capturing opportunities in Salesforce CRM" should produce ZERO CRM
-mentions in the hook and AT MOST one brief CRM mention in the proof paragraph. It should
-NOT produce a CRM-themed proof paragraph or repeat CRM across multiple paragraphs.
+a section header is a MAJOR theme — that's what to lead with.
+
+For minor items: prefer to omit entirely over including. A minor JD item is NOT entitled
+to a sentence in the letter. Including it adds noise without adding signal. Test before
+including a minor item: "does mentioning this make the candidate more obviously qualified
+for the role?" If no, drop it.
+
+Example: a JD with one passing mention of "Capturing opportunities in Salesforce CRM"
+should produce ZERO CRM mentions in the hook, ZERO CRM mentions in the value-add or
+close, and likely ZERO CRM mentions in the proof paragraph (because there's almost
+always a better, more JD-central proof point to spend that sentence on). It should
+NEVER produce a phrase like "demonstrating tight CRM coordination" — that's the candidate
+flexing on a tool the JD barely cares about.
 
 DO NOT VOLUNTEER SPECIFIC PRODUCTS THE JD DIDN'T NAME. If the JD says "CRM" with no
 product, write "CRM". Do NOT write "Privyr CRM", "Wix CRM", "Shopify CRM", "GoHighLevel",

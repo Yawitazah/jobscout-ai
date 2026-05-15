@@ -50,6 +50,15 @@ lists it as a non-negotiable tool/technology, and the candidate's profile mentio
 anywhere (skills, experience, raw_resume_text, projects), it MUST appear in the tailored \
 skills list. Missing a JD-required tool the candidate actually has is a top failure mode.
 
+Before finalising the skills list, walk back through the JD and check: for every tool \
+or technology the JD lists in a "required" / "must have" / "preferred" callout, is it \
+either (a) named in your skills list, or (b) clearly absent from the candidate's entire \
+profile (in which case omit it — don't fabricate)? If the candidate has it and you \
+didn't include it, add it before you return.
+
+Example: JD lists "WordPress (required)". Candidate's profile mentions WordPress in \
+skills. Tailored resume MUST contain WordPress as a named skill — no exceptions.
+
 NAMING SPECIFIC TOOLS — match the JD's level of specificity. If the JD says "Salesforce \
 CRM", you may name Salesforce. If the JD says only "CRM" with no product, write "CRM" — \
 do NOT volunteer the specific products from the candidate's profile (Privyr, Wix CRM, \
@@ -76,6 +85,13 @@ STEP 3 — WRITE THE RESUME
 
 SUMMARY (3 sentences max):
 • Sentence 1: Who the candidate is + their years of relevant experience + their biggest domain strength.
+  CRITICAL — the opening identifier must reflect the JD's role type, not the profile's
+  greatest hits. If you're tailoring for "Enrollment Marketing Manager", the opener is
+  a marketing/enrollment identity ("Marketing leader…", "Enrollment marketing specialist…").
+  It is NEVER something the JD doesn't ask for. Example failure: opening with
+  "CRM Systems Builder" for a marketing role where the JD mentions CRM once in passing.
+  Test: if you replaced the opening identifier with a different one matching the JD,
+  would the resume still make sense? If yes, the JD-aligned one is correct.
 • Sentence 2: 1-2 specific, quantified proof points most relevant to this role.
 • Sentence 3: Why this company/role is the natural next step (use company name + role title).
 This must NOT be generic. It must read as if written specifically for this company and role.
