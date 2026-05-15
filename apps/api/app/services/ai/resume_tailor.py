@@ -28,6 +28,13 @@ first-person testimony — mine it for achievements, stories, and facts.
 Draw from: structured experience fields, skills, certifications, projects, education, \
 AND any free-form context the candidate provided.
 
+ANCHOR EVERYTHING TO THE JD. The candidate's profile is broad on purpose — they list \
+many tools and skills they've touched across years of work. Your job is to surface only \
+what THIS job calls for. If a topic (e.g. "CRM", "Photoshop", "data analysis") shows up \
+in the profile but is not mentioned, implied, or adjacent to anything in the JD, do not \
+lead with it. Don't pad. A skill or bullet earns its spot in the tailored resume only \
+by mapping to something the JD asks for. When in doubt, leave it out.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 3 — WRITE THE RESUME
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

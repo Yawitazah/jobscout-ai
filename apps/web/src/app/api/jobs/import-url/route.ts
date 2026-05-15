@@ -28,6 +28,37 @@ function pickMeta(html: string, prop: string, attr: "property" | "name" = "prope
   return (a?.[1] ?? b?.[1] ?? "").trim();
 }
 
+function extractBodyText(html: string): string {
+  // Strip script/style/nav/footer/header so they don't leak into the JD.
+  let cleaned = html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, "")
+    .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, "")
+    .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, "")
+    .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, "")
+    .replace(/<form\b[^>]*>[\s\S]*?<\/form>/gi, "");
+  // Prefer <main> / <article> if present (real content lives there).
+  const main = cleaned.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)
+    || cleaned.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i);
+  if (main) cleaned = main[1];
+  // Convert block-level closures to newlines so paragraphs/list-items stay readable.
+  cleaned = cleaned
+    .replace(/<\/(p|div|li|h[1-6]|tr|br)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return cleaned;
+}
+
 async function scrape(url: string): Promise<Scraped> {
   try {
     const r = await fetch(url, {
@@ -47,7 +78,13 @@ async function scrape(url: string): Promise<Scraped> {
       title = t?.[1]?.trim() ?? "";
     }
     const company = pickMeta(html, "og:site_name");
-    const description = pickMeta(html, "og:description") || pickMeta(html, "description", "name");
+
+    // Prefer the page body text (real JD content) over og:description (usually
+    // a one-liner). Cap at 8 KB so we don't blow up the tailoring prompt.
+    const bodyText = extractBodyText(html);
+    const ogDesc = pickMeta(html, "og:description") || pickMeta(html, "description", "name");
+    let description = bodyText.length > ogDesc.length * 2 ? bodyText : ogDesc;
+    if (description.length > 8000) description = description.slice(0, 8000);
 
     if (title.includes(" - ") && !company) {
       const idx = title.lastIndexOf(" - ");

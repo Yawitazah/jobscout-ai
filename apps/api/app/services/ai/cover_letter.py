@@ -49,6 +49,15 @@ RULES:
 • The letter must feel hand-crafted for THIS company and THIS role — not a template.
 • Use the company name at least once by name.
 
+ANCHOR ON THE JD, NOT THE PROFILE'S GREATEST HITS.
+The candidate's profile is broad. They've touched many tools over many years. Your job is
+to tell the story THIS hiring manager wants to hear — anchored entirely in what THIS JD
+asks for. If a skill, tool, or topic (e.g. "CRM", "data analysis", "Photoshop") appears
+in the profile but is not asked for, implied by, or adjacent to anything in the JD,
+do not feature it. No filler. A profile achievement earns mention in the letter only
+when it maps to a stated need in the JD. Three tight, JD-anchored proof points beat
+six unrelated ones every time.
+
 WORDS TO AVOID (corporate clichés — they get flagged and look junior):
 passionate, ninja, rockstar, guru, synergy, leverage, utilize, utilise, dynamic,
 innovative, thought leader, game changer, game-changer, disruptive, holistic,
