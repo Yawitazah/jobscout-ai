@@ -596,13 +596,66 @@ function CoverLetterTab({ app, onRegenerate }: { app: ApplicationDetail; onRegen
           )}
         </div>
       </div>
-      <div className="space-y-3">
-        {cl.content_json?.paragraphs?.map((p, i) => (
-          <p key={i} className="text-sm text-gray-700 leading-relaxed">{p}</p>
-        )) ?? (
-          <p className="text-sm text-gray-700 whitespace-pre-wrap">{cl.content_text}</p>
-        )}
-      </div>
+      <CoverLetterPreview app={app} />
+    </div>
+  );
+}
+
+function CoverLetterPreview({ app }: { app: ApplicationDetail }) {
+  // The PDF/DOCX renderer wraps the body paragraphs in a contact header,
+  // date, recipient line, greeting, and sign-off. The preview should match
+  // exactly what the user downloads, so we render the same scaffold here.
+  const cl = app.cover_letter;
+  if (!cl) return null;
+
+  // Pull contact from the resume's contact block when available — it's the
+  // same source the PDF renderer uses (profile-backed). Fall back to safe
+  // defaults if the resume isn't generated yet.
+  const resumeJson = (app.resume?.content_json ?? {}) as {
+    contact?: {
+      full_name?: string;
+      email?: string;
+      phone?: string;
+      location?: string;
+      linkedin_url?: string;
+      github_url?: string;
+      portfolio_url?: string;
+    };
+  };
+  const contact = resumeJson.contact ?? {};
+  const name = contact.full_name?.trim() || "";
+  const company = app.user_job?.job?.company?.name?.trim() || "";
+
+  const contactLines = [
+    contact.location?.replace(/,\s*$/, "").trim(),
+    contact.phone?.trim(),
+    contact.email?.trim(),
+    contact.linkedin_url?.replace(/^https?:\/\//, "").replace(/\/$/, ""),
+  ].filter(Boolean) as string[];
+
+  const today = new Date().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  const paragraphs = cl.content_json?.paragraphs ?? (cl.content_text ? cl.content_text.split("\n\n") : []);
+
+  return (
+    <div className="border border-gray-100 rounded-lg p-6 bg-white space-y-3 text-sm leading-relaxed text-gray-800">
+      {name && <p className="font-bold text-base">{name}</p>}
+      {contactLines.map((line, i) => (
+        <p key={`c-${i}`} className="text-gray-600 text-xs">{line}</p>
+      ))}
+      {(name || contactLines.length > 0) && <div className="h-2" />}
+      <p className="text-gray-600">{today}</p>
+      {company && <p className="text-gray-700">Hiring Team, {company}</p>}
+      <p>Dear Hiring Manager,</p>
+      {paragraphs.map((p, i) => (
+        <p key={i}>{p}</p>
+      ))}
+      <p>Sincerely,</p>
+      {name && <p>{name}</p>}
     </div>
   );
 }
