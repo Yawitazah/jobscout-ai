@@ -440,7 +440,7 @@ async def download_cover_letter(
 
     profile_row = (
         supabase.table("profiles")
-        .select("full_name, email, resume_email, contact_email, phone, location, linkedin_url")
+        .select("full_name, email, resume_email, phone, location, linkedin_url")
         .eq("id", user["id"])
         .single()
         .execute()
