@@ -406,6 +406,74 @@ async def generate_cover_letter_for_job(
     )
 
 
+@router.get("/{user_job_id}/cover_letter/download/{format}")
+async def download_cover_letter(
+    user_job_id: str,
+    format: str,
+    user: Annotated[dict[str, Any], Depends(get_current_user)],
+    supabase: Annotated[Client, Depends(get_supabase_admin)],
+) -> Response:
+    if format not in {"pdf", "docx"}:
+        raise HTTPException(status_code=400, detail="Format must be pdf or docx")
+
+    app_row = (
+        supabase.table("applications")
+        .select("cover_letter_doc_id, user_job:user_jobs(job:jobs(title, company:companies(name)))")
+        .eq("user_job_id", user_job_id)
+        .eq("user_id", user["id"])
+        .limit(1)
+        .execute()
+    )
+    app_d = (app_row.data or [])[0] if app_row.data else None
+    if not app_d or not app_d.get("cover_letter_doc_id"):
+        raise HTTPException(status_code=404, detail="No cover letter generated for this job yet")
+
+    doc_row = (
+        supabase.table("generated_documents")
+        .select("content_json, content_text")
+        .eq("id", app_d["cover_letter_doc_id"])
+        .single()
+        .execute()
+    )
+    if not doc_row.data:
+        raise HTTPException(status_code=404, detail="Cover letter document not found")
+
+    profile_row = (
+        supabase.table("profiles")
+        .select("full_name, email, resume_email, contact_email, phone, location, linkedin_url")
+        .eq("id", user["id"])
+        .single()
+        .execute()
+    )
+    profile = profile_row.data or {}
+
+    content_json = doc_row.data.get("content_json") or {}
+    paragraphs = content_json.get("paragraphs")
+    if not paragraphs:
+        text = doc_row.data.get("content_text") or ""
+        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+
+    job_info = app_d.get("user_job", {}).get("job") if isinstance(app_d.get("user_job"), dict) else None
+    job_for_render = {
+        "title": (job_info or {}).get("title") or "",
+        "company_name": ((job_info or {}).get("company") or {}).get("name") or "",
+    }
+
+    from app.services.documents.cover_letter_builder import build_pdf as cl_pdf, build_docx as cl_docx
+
+    if format == "docx":
+        return Response(
+            content=cl_docx(paragraphs, profile, job_for_render),
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": "attachment; filename=cover_letter.docx"},
+        )
+    return Response(
+        content=cl_pdf(paragraphs, profile, job_for_render),
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=cover_letter.pdf"},
+    )
+
+
 @router.get("/{user_job_id}/resume/download/docx")
 async def download_resume_docx(
     user_job_id: str,

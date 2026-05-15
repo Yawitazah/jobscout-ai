@@ -527,6 +527,7 @@ function ResumeTab({ app, onRegenerate }: { app: ApplicationDetail; onRegenerate
 
 function CoverLetterTab({ app, onRegenerate }: { app: ApplicationDetail; onRegenerate?: () => void }) {
   const cl = app.cover_letter;
+  const userJobId = app.user_job?.id;
   const isGenerating = ["tailoring_resume", "writing_cover_letter"].includes(app.status);
 
   if (!cl) {
@@ -567,15 +568,33 @@ function CoverLetterTab({ app, onRegenerate }: { app: ApplicationDetail; onRegen
             <span className="text-amber-600">Flagged: {banned.join(", ")}</span>
           )}
         </div>
-        {onRegenerate && (
-          <button
-            onClick={onRegenerate}
-            className="flex items-center gap-1 text-xs text-gray-500 border border-gray-200 px-2.5 py-1.5 rounded-[6px] hover:bg-gray-50"
-            title="Re-run AI to write a fresh cover letter"
-          >
-            <RefreshCw size={11} /> Regenerate
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {onRegenerate && (
+            <button
+              onClick={onRegenerate}
+              className="flex items-center gap-1 text-xs text-gray-500 border border-gray-200 px-2.5 py-1.5 rounded-[6px] hover:bg-gray-50"
+              title="Re-run AI to write a fresh cover letter"
+            >
+              <RefreshCw size={11} /> Regenerate
+            </button>
+          )}
+          {userJobId && (
+            <>
+              <a
+                href={`/api/applications/cover_letter/download/${userJobId}/docx`}
+                className="flex items-center gap-1 text-xs text-gray-500 border border-gray-200 px-2.5 py-1.5 rounded-[6px] hover:bg-gray-50"
+              >
+                <Download size={11} /> DOCX
+              </a>
+              <a
+                href={`/api/applications/cover_letter/download/${userJobId}/pdf`}
+                className="flex items-center gap-1 text-xs text-gray-500 border border-gray-200 px-2.5 py-1.5 rounded-[6px] hover:bg-gray-50"
+              >
+                <Download size={11} /> PDF
+              </a>
+            </>
+          )}
+        </div>
       </div>
       <div className="space-y-3">
         {cl.content_json?.paragraphs?.map((p, i) => (

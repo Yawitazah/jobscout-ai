@@ -86,6 +86,23 @@ def _years_of_experience(profile: dict) -> int:
     return min(len(exp) * 2, 15)
 
 
+def _experience_body(role: dict) -> str:
+    """
+    Render the body of a single experience entry: prefer explicit bullets,
+    fall back to a free-text description, otherwise empty.
+    Profiles in this codebase normally store a single `description` string per
+    role rather than a bullet list — without this fallback the work-experience
+    textarea would only contain titles + dates.
+    """
+    bullets = role.get("bullets") or role.get("responsibilities") or role.get("highlights") or []
+    if isinstance(bullets, list) and bullets:
+        return "\n".join(f"- {b}" for b in bullets[:6])
+    if isinstance(bullets, str) and bullets.strip():
+        return bullets.strip()
+    description = (role.get("description") or "").strip()
+    return description
+
+
 # ----------------------------------------------------------------------------
 # PrefillCopilot
 # ----------------------------------------------------------------------------
@@ -415,7 +432,7 @@ class PrefillCopilot(FormFiller):
         return "\n".join(lines)
 
     def _format_current_job(self) -> str:
-        """Render the most recent role as title + bullets."""
+        """Render the most recent role as title + body (bullets or description)."""
         exp = self.profile.get("experience") or []
         if not exp:
             return ""
@@ -423,10 +440,7 @@ class PrefillCopilot(FormFiller):
         title = (e.get("title") or "").strip()
         company = (e.get("company") or "").strip()
         header = " at ".join(x for x in (title, company) if x)
-        bullets = e.get("bullets") or e.get("responsibilities") or e.get("highlights") or []
-        if isinstance(bullets, str):
-            return f"{header}\n\n{bullets}".strip()
-        body = "\n".join(f"- {b}" for b in bullets[:8])
+        body = _experience_body(e)
         return f"{header}\n{body}".strip() if body else header
 
     def _format_work_experience(self) -> str:
@@ -439,19 +453,14 @@ class PrefillCopilot(FormFiller):
             title = (e.get("title") or "").strip()
             company = (e.get("company") or "").strip()
             start = (e.get("start_date") or "").strip()
-            end = (e.get("end_date") or "Present").strip()
+            end_raw = e.get("end_date")
+            end = (end_raw if end_raw else "Present").strip() if isinstance(end_raw, str) else "Present"
             header_parts = [p for p in (title, company) if p]
             header = " at ".join(header_parts) if header_parts else "Role"
             if start or end:
                 header = f"{header} ({start}–{end})"
-            bullets = e.get("bullets") or e.get("responsibilities") or e.get("highlights") or []
-            if isinstance(bullets, str):
-                sections.append(f"{header}\n{bullets}")
-            elif bullets:
-                body = "\n".join(f"- {b}" for b in bullets[:5])
-                sections.append(f"{header}\n{body}")
-            else:
-                sections.append(header)
+            body = _experience_body(e)
+            sections.append(f"{header}\n{body}" if body else header)
         return "\n\n".join(sections)
 
     async def _is_already_filled(self, el, meta: dict) -> bool:
