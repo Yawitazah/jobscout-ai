@@ -194,9 +194,18 @@ export function ScoutShell({ initialConversationId, applicationId, onClose }: Pr
   const [sending, setSending] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Default the sidebar to closed on mobile (full-chat view) and open on
+  // desktop (split inline). The hamburger toggles in both modes.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(min-width: 1024px)").matches) {
+      setSidebarOpen(true);
+    }
+  }, []);
 
   // Voice dictation — updates input live with speech
   const { listening, toggle: toggleMic, supported: micSupported } = useVoiceDictation(
@@ -355,83 +364,125 @@ export function ScoutShell({ initialConversationId, applicationId, onClose }: Pr
 
   const activeConvo = conversations.find((c) => c.id === activeId);
 
-  return (
-    <div className="flex h-full overflow-hidden bg-white">
-      {/* Sidebar */}
-      <div
-        className={`${sidebarOpen ? "w-64" : "w-0"} shrink-0 transition-all duration-200 overflow-hidden flex flex-col bg-[#1A2B4C] text-white`}
-      >
-        <div className="p-4 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2">
-            <ScoutIcon size={22} />
-            <span className="font-semibold text-sm tracking-wide">Scout</span>
-          </div>
-          <button
-            onClick={() => { setActiveId(null); setMessages([]); }}
-            title="New conversation"
-            className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
+  // Sidebar content is shared between the inline (desktop) and the overlay
+  // drawer (mobile) variants.
+  const sidebarContent = (
+    <>
+      <div className="p-4 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2">
+          <ScoutIcon size={22} />
+          <span className="font-semibold text-sm tracking-wide">Scout</span>
         </div>
-
-        <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-0.5">
-          {conversations.length === 0 && (
-            <p className="text-white/40 text-xs px-2 py-4 text-center">No conversations yet</p>
-          )}
-          {conversations.map((c) => (
-            <div key={c.id} className="group relative">
-              {renamingId === c.id ? (
-                <input
-                  autoFocus
-                  value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onBlur={() => renameConversation(c.id, renameValue)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") renameConversation(c.id, renameValue);
-                    if (e.key === "Escape") setRenamingId(null);
-                  }}
-                  className="w-full bg-white/10 text-white text-xs rounded px-2 py-1.5 outline-none"
-                />
-              ) : (
-                <button
-                  onClick={() => setActiveId(c.id)}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors truncate pr-14 ${
-                    activeId === c.id ? "bg-white/20 text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
-                  }`}
-                >
-                  {c.title}
-                </button>
-              )}
-              <div className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-0.5">
-                <button
-                  onClick={() => { setRenamingId(c.id); setRenameValue(c.title); }}
-                  className="p-1 rounded hover:bg-white/20"
-                  title="Rename"
-                >
-                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 13l6.5-6.5a2 2 0 012.828 2.828L11.828 15.828a4 4 0 01-1.414.944l-3.414.586.586-3.414A4 4 0 019 12.414V13z" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => deleteConversation(c.id)}
-                  className="p-1 rounded hover:bg-red-500/40"
-                  title="Delete"
-                >
-                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+        <button
+          onClick={() => {
+            setActiveId(null);
+            setMessages([]);
+            // On mobile, jumping into a fresh chat should close the drawer
+            // so the user lands on the chat surface.
+            if (typeof window !== "undefined" && !window.matchMedia("(min-width: 1024px)").matches) {
+              setSidebarOpen(false);
+            }
+          }}
+          title="New conversation"
+          className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
       </div>
 
-      {/* Main chat area */}
-      <div className="flex flex-col flex-1 min-w-0">
+      <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-0.5">
+        {conversations.length === 0 && (
+          <p className="text-white/40 text-xs px-2 py-4 text-center">No conversations yet</p>
+        )}
+        {conversations.map((c) => (
+          <div key={c.id} className="group relative">
+            {renamingId === c.id ? (
+              <input
+                autoFocus
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={() => renameConversation(c.id, renameValue)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") renameConversation(c.id, renameValue);
+                  if (e.key === "Escape") setRenamingId(null);
+                }}
+                className="w-full bg-white/10 text-white text-xs rounded px-2 py-1.5 outline-none"
+              />
+            ) : (
+              <button
+                onClick={() => {
+                  setActiveId(c.id);
+                  // On mobile, picking a conversation should close the drawer
+                  // so we drop the user back into the chat full-screen.
+                  if (typeof window !== "undefined" && !window.matchMedia("(min-width: 1024px)").matches) {
+                    setSidebarOpen(false);
+                  }
+                }}
+                className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors truncate pr-14 ${
+                  activeId === c.id ? "bg-white/20 text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                {c.title}
+              </button>
+            )}
+            <div className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-0.5">
+              <button
+                onClick={() => { setRenamingId(c.id); setRenameValue(c.title); }}
+                className="p-1 rounded hover:bg-white/20"
+                title="Rename"
+              >
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 13l6.5-6.5a2 2 0 012.828 2.828L11.828 15.828a4 4 0 01-1.414.944l-3.414.586.586-3.414A4 4 0 019 12.414V13z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => deleteConversation(c.id)}
+                className="p-1 rounded hover:bg-red-500/40"
+                title="Delete"
+              >
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+
+  return (
+    <div className="relative flex h-full overflow-hidden bg-white">
+      {/* Sidebar — desktop (inline, toggleable column) */}
+      <div
+        className={`hidden lg:flex ${sidebarOpen ? "w-64" : "w-0"} shrink-0 transition-all duration-200 overflow-hidden flex-col bg-[#1A2B4C] text-white`}
+      >
+        {sidebarContent}
+      </div>
+
+      {/* Sidebar — mobile (overlay drawer; never splits the screen) */}
+      <div
+        className={`lg:hidden absolute inset-0 z-30 bg-black/40 transition-opacity duration-200 ${
+          sidebarOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        }`}
+        onClick={() => setSidebarOpen(false)}
+        aria-hidden="true"
+      />
+      <div
+        className={`lg:hidden absolute inset-y-0 left-0 z-40 w-72 max-w-[80%] bg-[#1A2B4C] text-white flex flex-col transition-transform duration-200 ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+        role="dialog"
+        aria-label="Scout conversations"
+        aria-modal="true"
+      >
+        {sidebarContent}
+      </div>
+
+      {/* Main chat area — always full width on mobile, fills remaining space on desktop */}
+      <div className="flex flex-col flex-1 min-w-0 w-full">
         {/* Header */}
         <div className="shrink-0 h-12 border-b border-gray-100 flex items-center px-4 gap-3">
           <button
