@@ -224,8 +224,11 @@ Return ONLY valid JSON, no markdown fences, no commentary:
 
 
 def tailor_resume(profile: dict, job: dict) -> dict:
-    jd_text = (job.get('description') or '')[:4000]
-    must_include = _compute_must_include_tools(profile, jd_text)
+    full_jd = job.get('description') or ''
+    jd_text = full_jd[:4000]  # what goes to the AI prompt (cost control)
+    # Tool-extraction must scan the FULL JD — required-tool callouts often
+    # live near the bottom of long postings, past the 4 KB truncation.
+    must_include = _compute_must_include_tools(profile, full_jd)
 
     user_msg_parts = [
         f"CANDIDATE PROFILE:\n{json.dumps(_slim_profile(profile), indent=2)}",
