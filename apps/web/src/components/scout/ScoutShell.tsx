@@ -454,7 +454,7 @@ export function ScoutShell({ initialConversationId, applicationId, onClose }: Pr
   );
 
   return (
-    <div className="relative flex h-full overflow-hidden bg-white">
+    <div className="relative flex h-full w-full flex-1 overflow-hidden bg-white">
       {/* Sidebar — desktop (inline, toggleable column) */}
       <div
         className={`hidden lg:flex ${sidebarOpen ? "w-64" : "w-0"} shrink-0 transition-all duration-200 overflow-hidden flex-col bg-[#1A2B4C] text-white`}
