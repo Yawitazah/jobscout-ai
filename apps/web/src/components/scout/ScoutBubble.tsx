@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 import { ScoutShell } from "./ScoutShell";
 
 function ScoutIcon() {
@@ -15,13 +16,18 @@ function ScoutIcon() {
 
 export function ScoutBubble() {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+
+  // Don't show the floating bubble on the Scout page itself — it's redundant
+  // (you're already in Scout) and overlaps the chat send button.
+  if (pathname === "/scout" || pathname.startsWith("/scout/")) return null;
 
   return (
     <>
-      {/* Floating button */}
+      {/* Floating button — lifted above the mobile bottom tab bar (h-16). */}
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-[#1A2B4C] shadow-lg hover:bg-[#243d6b] transition-all flex items-center justify-center group"
+        className="fixed bottom-20 right-4 lg:bottom-6 lg:right-6 z-40 w-14 h-14 rounded-full bg-[#1A2B4C] shadow-lg hover:bg-[#243d6b] transition-all flex items-center justify-center group"
         title="Open Scout"
         aria-label="Open Scout job search agent"
       >
